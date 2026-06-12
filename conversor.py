@@ -11,6 +11,7 @@ import base64
 import hashlib
 import io
 import os
+import re
 import shutil
 import statistics
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -490,6 +491,23 @@ OPCIONES_POR_DEFECTO = {
 }
 
 
+def _sin_espacios(nombre):
+    return re.sub(r"\s+", "_", nombre.strip())
+
+
+def nombre_salida(ruta_pdf):
+    """Ruta del .md de salida: junto al PDF y sin espacios en el nombre."""
+    carpeta, nombre = os.path.split(ruta_pdf)
+    base = _sin_espacios(os.path.splitext(nombre)[0])
+    return os.path.join(carpeta, base + ".md")
+
+
+def _dir_imagenes(ruta_md):
+    """Carpeta de imágenes junto al .md, sin espacios en el nombre."""
+    carpeta, nombre = os.path.split(os.path.splitext(ruta_md)[0])
+    return os.path.join(carpeta, _sin_espacios(nombre) + "_archivos")
+
+
 def _guardar_imagen_externa(elemento, dir_imagenes, archivos_escritos):
     nombre = archivos_escritos.get(elemento["hash"])
     if nombre is None:
@@ -524,7 +542,7 @@ def generar_markdown(ruta_pdf, ruta_md, elementos, opciones=None, progreso=None)
         if progreso:
             progreso(texto, fraccion)
 
-    dir_imagenes = os.path.splitext(ruta_md)[0] + "_archivos"
+    dir_imagenes = _dir_imagenes(ruta_md)
     archivos_escritos = {}
     partes = []
 
@@ -570,7 +588,7 @@ def convertir_automatico(ruta_pdf, ruta_md=None, opciones=None, progreso=None):
     """Conversión completa aplicando las recomendaciones sin intervención."""
     opciones = {**OPCIONES_POR_DEFECTO, **(opciones or {})}
     if ruta_md is None:
-        ruta_md = os.path.splitext(ruta_pdf)[0] + ".md"
+        ruta_md = nombre_salida(ruta_pdf)
     elementos = analizar_pdf(ruta_pdf, idioma=opciones["idioma"], progreso=progreso)
     seleccionados = []
     for elemento in elementos:

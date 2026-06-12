@@ -133,7 +133,7 @@ class Aplicacion:
         for ruta_pdf in rutas:
             self.cola_trabajos.put({
                 "ruta_pdf": ruta_pdf,
-                "ruta_md": os.path.splitext(ruta_pdf)[0] + ".md",
+                "ruta_md": conversor.nombre_salida(ruta_pdf),
                 "opciones": opciones,
                 "automatico": automatico,
             })
