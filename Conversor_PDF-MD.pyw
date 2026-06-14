@@ -15,6 +15,11 @@ from tkinter import filedialog, messagebox, ttk
 
 import conversor
 
+# Máximo de elementos a dibujar en la ventana de revisión. Por encima de este
+# número se aplican las recomendaciones automáticas en vez de renderizar miles
+# de filas (que bloquearían Tkinter).
+MAX_ELEMENTOS_PREVIA = 300
+
 
 class Aplicacion:
 
@@ -230,14 +235,46 @@ class Aplicacion:
                 respuesta.put(None)
             return
 
+        # Los elementos que el recomendador ya descarta (logos repetidos,
+        # fragmentos diminutos) no se dibujan: solo inflarían la ventana y, en
+        # documentos con miles de elementos, agotarían la memoria de Tkinter.
+        # Si aun así quedan demasiados para revisar, se aplican las
+        # recomendaciones y no se dibuja ninguna fila.
+        descartados = [e for e in elementos
+                       if e["recomendacion"] == conversor.ACCION_DESCARTAR]
+        revisables = [e for e in elementos
+                      if e["recomendacion"] != conversor.ACCION_DESCARTAR]
+
+        if len(revisables) > MAX_ELEMENTOS_PREVIA:
+            if messagebox.askyesno(
+                    "Documento muy grande",
+                    f"{nombre} tiene {len(elementos)} elementos visuales "
+                    f"({len(revisables)} con texto o imagen relevante y "
+                    f"{len(descartados)} descartables: logos repetidos, líneas, "
+                    "fragmentos diminutos).\n\nSon demasiados para revisarlos uno "
+                    "por uno sin riesgo de bloquear el programa.\n\n¿Desea generar "
+                    "el archivo aplicando las recomendaciones automáticas?"):
+                seleccionados = []
+                for elemento in revisables:
+                    elemento["accion"] = elemento["recomendacion"]
+                    if elemento["accion"] != conversor.ACCION_DESCARTAR:
+                        seleccionados.append(elemento)
+                respuesta.put(seleccionados)
+            else:
+                respuesta.put(None)
+            return
+
         ventana_previa = tk.Toplevel(self.ventana)
         ventana_previa.title(f"Elementos visuales — {nombre}")
         ventana_previa.geometry("700x650")
         ventana_previa.configure(padx=10, pady=10)
         ventana_previa.referencias_imagenes = []
 
-        tk.Label(ventana_previa,
-                 text="Cada elemento trae la acción recomendada; ajústela si lo necesita:",
+        encabezado = "Cada elemento trae la acción recomendada; ajústela si lo necesita:"
+        if descartados:
+            encabezado += (f"\n({len(descartados)} elementos descartables —logos "
+                           "repetidos, líneas, fragmentos— se ocultaron.)")
+        tk.Label(ventana_previa, text=encabezado,
                  font=("Arial", 9, "bold")).pack(pady=(0, 5))
 
         variables_seleccion = []
@@ -266,7 +303,7 @@ class Aplicacion:
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        for elemento in elementos:
+        for elemento in revisables:
             fila = tk.Frame(marco_scroll, bg="white", bd=1, relief=tk.SOLID)
             fila.pack(fill=tk.X, padx=5, pady=5, ipadx=5, ipady=5)
 
