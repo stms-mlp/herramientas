@@ -125,7 +125,9 @@ componente tiene sus características.
 - **Equipo** — `id_patrimonial` (texto libre, externo, estable), `hostname`,
   `tipo_id`, `area_actual_id`, `estado_id`, `marca`, `modelo`, `n_serie`,
   `n_parte`, `ip`, `fecha_alta`, `observaciones`, **+ gestión:**
-  `responsable`, `compra_fecha`/`compra_factura`, `garantia`.
+  `responsable`, `compra_fecha`/`compra_factura`, `garantia`, **+ titularidad y
+  tenencia (§5.3):** `titularidad` (Municipal / Personal), `tenencia`/`ubicacion`
+  (En sede / Domicilio de empleado–teletrabajo), `tenedor` (persona que lo tiene).
 - **Componente** — pertenece a un `Equipo`. `tipo_componente`
   (CPU / RAM / Disco / GPU / Motherboard / etc.) con atributos:
   **marca, modelo, n/s, velocidad, memoria, bus**. **Importable** desde reportes
@@ -142,6 +144,23 @@ componente tiene sus características.
   insumos usa.
 
 > No se modela una "Red/IP" aparte: la IP es un campo del propio equipo.
+
+### 5.3 Titularidad y tenencia (ubicación física)
+
+Dos ejes independientes, importantes para la declaración de inventario (§8.1):
+
+- **Titularidad** — de quién es el equipo:
+  - **Municipal**: propiedad del municipio → se inventaría y declara.
+  - **Personal**: del empleado, usado para trabajar pero **NO** es del municipio
+    → se registra para trazabilidad/relaciones, pero **se excluye** de la
+    declaración patrimonial y se marca claramente como personal.
+- **Tenencia / ubicación física** — dónde está físicamente:
+  - **En sede** (en el edificio/área).
+  - **En domicilio de empleado** (teletrabajo), identificando al `tenedor`.
+
+> Un equipo puede ser **municipal pero estar fuera de sede** (teletrabajo): sigue
+> siendo del municipio y se declara, aunque no esté en el edificio. Y un equipo
+> **personal en sede** se usa pero no se declara como municipal.
 
 ### 5.2 Importación de características (CPU-Z / HWMonitor)
 
@@ -191,14 +210,22 @@ componente tiene sus características.
   área) + filtros por tipo, estado e IP.
 - ABM de **tablas auxiliares**.
 
-### 8.1 Resumen de hardware por equipo
+### 8.1 Resumen de hardware y extracto por repartición
 
-- Cada equipo emite un **resumen de hardware** (ficha imprimible/exportable),
-  equivalente al del inventario viejo pero **estructurado y legible**: en lugar
+- **Por equipo:** ficha de **resumen de hardware** (imprimible/exportable),
+  equivalente a la del inventario viejo pero **estructurada y legible**: en lugar
   del string apelmazado `Athlon 3000G + Prime A320M-K + (1) DDR4 8GB + SSD 220GB
-  HDD 1TB`, se muestra una ficha clara con identificación (hostname, ID
-  patrimonial, área, estado), componentes (CPU, placa, RAM, discos, GPU…),
+  HDD 1TB`, una ficha clara con identificación (hostname, ID patrimonial, área,
+  estado, titularidad y tenencia), componentes (CPU, placa, RAM, discos, GPU…),
   accesos remotos y equipos asociados.
+- **Por repartición (extracto / declaración de inventario):** cuando un área
+  solicita el listado de los equipos con que cuenta, el sistema **emite un
+  extracto entregable** que el área usa en su **declaración de inventario**
+  patrimonial.
+  - Incluye los equipos **municipales** del área (en sede y en teletrabajo).
+  - **Excluye** los equipos **personales** (o los lista aparte, claramente
+    marcados como no municipales), para que no se declaren como propios del
+    municipio.
 
 ---
 
