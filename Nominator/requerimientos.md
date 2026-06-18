@@ -6,9 +6,10 @@
 > registrando datos técnicos, componentes, insumos, accesos remotos y relaciones
 > entre equipos.
 
-Reemplaza al inventario anterior en HTML (`Inventario23/`), que usaba códigos
-del tipo `00-E00-05` (área de 2 dígitos + **una letra en español** por tipo) y
-hojas estáticas difíciles de mantener cuando las áreas cambian.
+Sustituye al inventario anterior en HTML (`Inventario23/`). **Es un sistema
+nuevo: se aplican buenas prácticas y NO se arrastran estructuras del sistema
+viejo que no aporten o puedan mejorarse.** El material viejo sirve sólo como
+referencia y eventual fuente de algunos datos.
 
 ---
 
@@ -21,6 +22,8 @@ hojas estáticas difíciles de mantener cuando las áreas cambian.
    conecta a tal impresora).
 4. **Trazar**: registrar mudanzas y cambios, sin perder la identidad ni la
    historia del equipo.
+5. **Listar por repartición** y emitir un **resumen de hardware por equipo**
+   legible.
 
 ---
 
@@ -33,8 +36,8 @@ hojas estáticas difíciles de mantener cuando las áreas cambian.
   `mod_rewrite`.
 - Base de datos en archivo `datos/nominator.sqlite`, protegido del acceso web
   por `.htaccess`.
-- La lógica de negocio queda aislada en `lib/` para poder migrar a un framework
-  (Slim/Leaf) más adelante si hiciera falta.
+- **Login requerido** (§9). Lógica de negocio aislada en `lib/` por si más
+  adelante se migra a un microframework.
 
 ---
 
@@ -44,7 +47,7 @@ Cada equipo tiene **dos identificadores** con propósitos distintos:
 
 | Identificador | Para qué sirve | ¿Cambia en mudanza? | Ejemplo |
 |---|---|---|---|
-| **ID patrimonial** (interno) | Clave **permanente** del equipo. A esto se "cuelgan" componentes, relaciones, accesos e historial. | **No** | `#0042` |
+| **ID patrimonial** | Identificador **externo**, cargado a mano desde otro sistema patrimonial. **Texto libre.** A esto se "cuelgan" componentes, relaciones, accesos e historial. **Estable.** | **No** | `MLP-0042` |
 | **Hostname** (NetBIOS/DNS) | Nombre real del equipo en Windows/red. | **Sí** (refleja el área actual) | `SGYA-DA-DK001` |
 
 ### 3.1 Reglas del hostname
@@ -55,43 +58,40 @@ Cada equipo tiene **dos identificadores** con propósitos distintos:
 - **Largo máximo 15 caracteres** (límite NetBIOS; DNS admite 63, manda el menor).
 - **Formato:** `{repartición-invertida}-{TIPO}{NNN}`
   - *Repartición invertida*: el código del organigrama se invierte y se
-    reemplaza `#` por `-`. Ej.: `DA#SGYA` → `SGYA-DA`. (Padre primero, dependencia
-    después.)
+    reemplaza `#` por `-`. Ej.: `DA#SGYA` → `SGYA-DA` (padre primero,
+    dependencia después).
   - *TIPO*: código de 2 letras del tipo de equipo (ver §4).
-  - *NNN*: correlativo de 3 dígitos **por área y por tipo** (reinicia en cada
-    área/tipo).
-  - Ejemplo completo: `SGYA-DA-DK001` = Secretaría de Gobierno y Administración →
-    Dirección de Administración → Desktop 001.
+  - *NNN*: correlativo de 3 dígitos **por área y por tipo**.
+  - Ejemplo: `SGYA-DA-DK001` = Sec. de Gobierno y Administración → Dirección de
+    Administración → Desktop 001.
 
 ### 3.2 Manejo del límite de 15 caracteres
 
 Algunas reparticiones largas se pasan (ej. `SGYA-DEESOE-DK001` = 17). El sistema:
 
 1. Si el nombre completo entra en 15 → lo usa.
-2. Si no entra → cae automáticamente a **sólo la dependencia hoja**
-   (`DEESOE-DK001`) y **avisa** al usuario.
-3. Si aún así excede → trunca de forma controlada y avisa.
+2. Si no → cae a **sólo la dependencia hoja** (`DEESOE-DK001`) y **avisa**.
+3. Si aún excede → trunca de forma controlada y avisa.
 4. Verifica unicidad global del hostname; ante colisión, ajusta el correlativo.
 
-> **Nota de datos:** en el organigrama hay un código duplicado real
-> (`DEPC#SGYA` aparece como "Prensa y Ceremonial" **y** "Protección Civil"). El
-> sistema debe **detectar y marcar** estos duplicados al importar para que se
-> corrija uno (ej. renombrar a `DEPCIV#SGYA`), porque generarían hostnames
-> colisionantes.
+> **Nota de datos:** el organigrama trae un código duplicado real (`DEPC#SGYA`
+> figura como "Prensa y Ceremonial" **y** "Protección Civil"). El sistema debe
+> **detectarlo y marcarlo** al importar para corregir uno (ej. `DEPCIV#SGYA`),
+> ya que generarían hostnames colisionantes.
 
 ---
 
 ## 4. Tipos de equipo
 
-- Código de **2 letras** derivado del **nombre en inglés** (aunque la interfaz
-  los muestre en español). Editable desde tabla auxiliar (§7).
+- Código de **2 letras** derivado del **nombre en inglés** (la interfaz los
+  muestra en español). Editable desde tabla auxiliar (§7).
 - Flag **"lleva hostname"**: los equipos de red obtienen nombre NetBIOS/DNS; los
   periféricos (monitor, UPS, etc.) entran al inventario y se asocian a un equipo
   padre, pero no generan hostname.
 
 | Tipo (ES) | Nombre EN | Código | ¿Hostname? |
 |---|---|---|---|
-| PC de Escritorio | Desktop | `DK` | ✅ |
+| PC de Escritorio | Desktop | `DK` ✅conf. | ✅ |
 | Notebook | Notebook | `NB` | ✅ |
 | Server | Server | `SV` | ✅ |
 | Router | Router | `RT` | ✅ |
@@ -103,52 +103,53 @@ Algunas reparticiones largas se pasan (ej. `SGYA-DEESOE-DK001` = 17). El sistema
 | Estabilizador | Voltage Regulator | `VR` | ❌ |
 | Celular | Mobile | `MB` | ❌ |
 
-> Códigos a confirmar/ajustar: `DK` (Desktop), `VR` (Estabilizador) y `MB`
-> (Celular). Al ser tabla auxiliar, se cambian sin tocar código.
+> `DK` confirmado. `VR` y `MB` quedan como valor por defecto (editables en tabla
+> auxiliar).
 
 ---
 
 ## 5. Modelo de datos
 
 Orientado a objetos/componentes: un equipo **contiene** componentes, y cada
-componente tiene sus propias características.
+componente tiene sus características.
 
 ### 5.1 Entidades
 
-- **Area (Repartición)** — importada del organigrama (CSV `areas_iniciales.csv`).
+- **Area (Repartición)** — importada del organigrama (`areas_iniciales.csv`).
   Campos: `codigo` (ej. `DA#SGYA`), `descripcion`, `estructura`
   (Secretaría/Dirección/Departamento/División), `codigo_padre`, `abreviatura`,
   `ubicacion`, `activa`. **Versionable** (las áreas se crean, cambian y
   desaparecen → §6 y §7).
 - **TipoEquipo** — `codigo` (2 letras EN), `nombre_es`, `lleva_hostname`.
 - **Estado** — En uso / En depósito / En reparación / De baja. (Auxiliar.)
-- **Equipo** — `id_patrimonial` (permanente), `hostname`, `tipo_id`,
-  `area_actual_id`, `estado_id`, `marca`, `modelo`, `n_serie`, `n_parte`,
-  `fecha_alta`, `observaciones`.
+- **Equipo** — `id_patrimonial` (texto libre, externo, estable), `hostname`,
+  `tipo_id`, `area_actual_id`, `estado_id`, `marca`, `modelo`, `n_serie`,
+  `n_parte`, `ip`, `fecha_alta`, `observaciones`, **+ gestión:**
+  `responsable`, `compra_fecha`/`compra_factura`, `garantia`.
 - **Componente** — pertenece a un `Equipo`. `tipo_componente`
-  (CPU / RAM / Disco / GPU / Motherboard / etc.), y atributos clave→valor con las
-  **características más importantes** (no todas). **Importable** desde reportes de
-  **CPU-Z** y **HWMonitor** (§5.2).
+  (CPU / RAM / Disco / GPU / Motherboard / etc.) con atributos:
+  **marca, modelo, n/s, velocidad, memoria, bus**. **Importable** desde reportes
+  de **CPU-Z** y **HWMonitor** (§5.2).
 - **AccesoRemoto** — `equipo_id`, `servicio` (Anydesk / VNC / RDP / TeamViewer…
-  desde tabla auxiliar), `identificador` (ej. ID de Anydesk), `nota`. Según el
-  servicio se cargan los datos correspondientes.
+  desde tabla auxiliar), `identificador` (ej. ID de Anydesk), `nota`.
 - **Relacion** — `equipo_a_id`, `equipo_b_id`, `tipo`
   (usa_monitor / conecta_impresora / componente_de / otro).
 - **Movimiento** — `equipo_id`, `fecha`, `area_origen_id`, `area_destino_id`,
   `hostname_anterior`, `hostname_nuevo`, `motivo`, `usuario`.
-- **Insumo / Consumible** — para impresoras: `tipo` (tóner / unidad de imagen /
-  chip / cartucho), `modelo`, `stock`, y **compatibilidad** con modelos de
-  impresora/equipos. (Migra la lógica de `Toners.html`.)
-- **Red/IP** (opcional) — `equipo_id`, `ip`, `segmento`, `nota`. (Migra
-  `Red.html`.)
+- **Insumo de impresora** — **ligado a la impresora** (no es un registro suelto
+  como en el sistema viejo): `equipo_id` (impresora), `tipo` (tóner / unidad de
+  imagen / chip / cartucho), `modelo`, `nota`/`stock`. Una impresora declara qué
+  insumos usa.
+
+> No se modela una "Red/IP" aparte: la IP es un campo del propio equipo.
 
 ### 5.2 Importación de características (CPU-Z / HWMonitor)
 
-- El sistema **recibe y procesa** un archivo de **CPU-Z** (reporte `.txt`/`.html`)
-  o **HWMonitor** y extrae las características más relevantes para poblar los
-  **Componentes** del equipo (procesador y su modelo/núcleos/frecuencia, RAM
-  total y tipo, placa madre, discos, GPU, etc.).
-- Objetivo: cargar specs sin tipeo manual y de forma consistente.
+- El sistema **recibe y procesa** un reporte de **CPU-Z** (`.txt`/`.html`) o
+  **HWMonitor** y extrae, por componente, los datos clave: **marca, modelo, n/s,
+  velocidad, memoria y bus** (procesador, RAM, placa, discos, GPU…).
+- Objetivo: cargar specs sin tipeo manual y de forma consistente, para alimentar
+  el **resumen de hardware** (§8.1).
 
 ---
 
@@ -159,25 +160,20 @@ componente tiene sus propias características.
 - Al mudar un equipo de área, el sistema:
   1. Registra un **Movimiento** (origen → destino, fecha, motivo, usuario).
   2. Opcionalmente **regenera el hostname** según la nueva área (guardando el
-     anterior), o lo conserva si se prefiere.
+     anterior), o lo conserva.
 - Como las áreas mismas cambian (se renombran, aparecen, desaparecen), **todo
-  valor "que define nombres" vive en tablas auxiliares editables** (§7), no
+  valor que define nombres vive en tablas auxiliares editables** (§7), nunca
   hardcodeado.
 
 ---
 
-## 7. Tablas auxiliares (editables)
+## 7. Tablas auxiliares (editables desde la interfaz)
 
-Todo lo que pueda cambiar con el tiempo debe ser editable desde la interfaz, sin
-tocar código:
-
-- **Áreas / Reparticiones** (alta, baja, modificación; reflejan cambios del
-  organigrama).
+- **Áreas / Reparticiones** (ABM; reflejan cambios del organigrama).
 - **Tipos de equipo** (código, nombre, flag hostname).
 - **Estados**.
 - **Servicios de acceso remoto** (Anydesk, VNC, RDP…).
 - **Tipos de componente**.
-- **Insumos y compatibilidades** (tóners, unidades de imagen, chips).
 
 ---
 
@@ -190,35 +186,43 @@ tocar código:
 - **Accesos remotos** por equipo (Anydesk/VNC/…).
 - **Relaciones** entre equipos (monitor↔desktop, desktop→impresora).
 - **Mudanzas** con historial.
-- **Insumos** de impresoras (tóners y compatibilidad, con stock).
-- Listados/filtros por área, tipo, estado, IP.
-- ABM de todas las **tablas auxiliares**.
+- **Insumos** ligados a cada impresora.
+- **Listado por repartición** (vista principal del inventario, agrupable por
+  área) + filtros por tipo, estado e IP.
+- ABM de **tablas auxiliares**.
+
+### 8.1 Resumen de hardware por equipo
+
+- Cada equipo emite un **resumen de hardware** (ficha imprimible/exportable),
+  equivalente al del inventario viejo pero **estructurado y legible**: en lugar
+  del string apelmazado `Athlon 3000G + Prime A320M-K + (1) DDR4 8GB + SSD 220GB
+  HDD 1TB`, se muestra una ficha clara con identificación (hostname, ID
+  patrimonial, área, estado), componentes (CPU, placa, RAM, discos, GPU…),
+  accesos remotos y equipos asociados.
 
 ---
 
-## 9. Migración del inventario viejo (`Inventario23/`)
+## 9. Usuarios y acceso
 
-Material de referencia disponible (HTML exportado de planillas):
-
-- `Areas.html` — áreas con código de 2 dígitos, abreviatura (4 letras) y
-  ubicación.
-- `Planilla Inv..html` — equipos: Tipo, Descripción, ID, Uso, IP, Marca+Modelo+
-  Componentes+N/S, observaciones. Códigos legacy `00-{letra}00-{n}`.
-- `Red.html` — IP, área, hostname, especificaciones.
-- `Toners.html` — modelos de tóner ↔ impresoras ↔ stock.
-
-> La importación se evaluará **más adelante**: por ahora sirve de referencia para
-> mapear campos y, eventualmente, levantar algunos datos.
+- **Login requerido** para usar el sistema (no acceso libre).
+- Manejo simple de usuarios/sesión adecuado a hosting compartido (a definir
+  alcance de roles).
 
 ---
 
-## 10. Decisiones pendientes / a confirmar
+## 10. Decisiones tomadas
 
-1. Códigos de tipo a confirmar: `DK` (Desktop), `VR` (Estabilizador), `MB`
-   (Celular).
-2. ¿El **ID patrimonial** es un correlativo simple (`#0042`) o sigue algún
-   esquema con prefijo (ej. `MLP-0042`)?
-3. ¿Qué características exactas levantar de CPU-Z/HWMonitor (lista mínima)?
-4. ¿Campos extra de gestión que se usen siempre? (usuario responsable, fecha de
-   compra, N° de factura/orden de compra, garantía).
-5. ¿Manejo de **usuarios/login** en la app, o acceso libre dentro del hosting?
+1. Código `DK` (Desktop) **confirmado**; resto editable en tabla auxiliar.
+2. **ID patrimonial:** texto libre, cargado a mano desde otro sistema (formato
+   tipo `MLP-0042`).
+3. **CPU-Z/HWMonitor:** levantar marca, modelo, n/s, velocidad, memoria, bus.
+4. **Campos de gestión:** responsable, fecha/factura de compra, garantía.
+5. **Login:** requerido.
+
+---
+
+## 11. Material de referencia (`Inventario23/`)
+
+`Areas.html`, `Planilla Inv..html`, `Red.html`, `Toners.html` y las hojas por
+área. Se usan sólo como referencia/fuente eventual de datos; **no** se replican
+sus estructuras.
