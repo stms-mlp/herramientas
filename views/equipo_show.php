@@ -1,5 +1,8 @@
 <?php /** @var array $eq @var array $componentes */ ?>
 <div class="acciones-top">
+  <?php if (puede(ROL_TECNICO)): ?>
+    <a class="btn" href="?r=equipos.editar&id=<?= (int)$eq['id'] ?>">✎ Editar</a>
+  <?php endif; ?>
   <a class="btn" href="?r=reporte.ficha&id=<?= (int)$eq['id'] ?>" target="_blank">📄 Ficha de hardware</a>
   <a class="btn-sec" href="?r=equipos">Volver</a>
 </div>
