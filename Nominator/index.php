@@ -67,6 +67,62 @@ switch ($r) {
         pagina('Reparticiones', vista('areas_list', ['areas' => $areas, 'flash' => flash()]));
         break;
 
+    case 'areas.nueva':
+    case 'areas.editar':
+        requiere_rol(ROL_ADMIN);
+        $db = db();
+        $area = null;
+        if ($r === 'areas.editar') {
+            $st = $db->prepare('SELECT * FROM areas WHERE id=?');
+            $st->execute([(int)($_GET['id'] ?? 0)]);
+            $area = $st->fetch();
+            if (!$area) { http_response_code(404); pagina('No encontrado', '<p>Repartición inexistente.</p>'); break; }
+        }
+        $padres = $db->query('SELECT codigo, descripcion FROM areas ORDER BY codigo')->fetchAll();
+        pagina($area ? 'Editar repartición' : 'Nueva repartición',
+            vista('area_form', ['area' => $area, 'padres' => $padres, 'flash' => flash()]));
+        break;
+
+    case 'areas.crear':
+    case 'areas.actualizar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $db = db();
+        $editar = ($r === 'areas.actualizar');
+        $id = (int)($_POST['id'] ?? 0);
+        $codigo = trim($_POST['codigo'] ?? '');
+        $desc   = trim($_POST['descripcion'] ?? '');
+        if ($codigo === '' || $desc === '') {
+            flash('Código y descripción son obligatorios.', 'error');
+            redir($editar ? 'areas.editar&id=' . $id : 'areas.nueva');
+        }
+        $campos = [
+            'codigo'       => $codigo,
+            'descripcion'  => $desc,
+            'estructura'   => trim($_POST['estructura'] ?? ''),
+            'codigo_padre' => trim($_POST['codigo_padre'] ?? ''),
+            'abreviatura'  => trim($_POST['abreviatura'] ?? ''),
+            'ubicacion'    => trim($_POST['ubicacion'] ?? ''),
+            'activa'       => isset($_POST['activa']) ? 1 : 0,
+        ];
+        if ($editar) {
+            $set = implode(', ', array_map(fn($c) => "$c=?", array_keys($campos)));
+            $args = array_values($campos);
+            $args[] = $id;
+            $db->prepare("UPDATE areas SET $set WHERE id=?")->execute($args);
+            auditar('area', $id, 'modificación', $codigo);
+            flash('Repartición actualizada.');
+        } else {
+            $cols = implode(',', array_keys($campos));
+            $ph = implode(',', array_fill(0, count($campos), '?'));
+            $db->prepare("INSERT INTO areas ($cols) VALUES ($ph)")->execute(array_values($campos));
+            $id = (int)$db->lastInsertId();
+            auditar('area', $id, 'alta', $codigo);
+            flash('Repartición creada.');
+        }
+        redir('areas');
+        break;
+
     // ---------- Equipos ----------
     case 'equipos':
         requiere_login();
@@ -93,13 +149,25 @@ switch ($r) {
         break;
 
     case 'equipos.nuevo':
+    case 'equipos.editar':
         requiere_rol(ROL_TECNICO);
         $db = db();
+        $eq = null;
+        if ($r === 'equipos.editar') {
+            $st = $db->prepare('SELECT * FROM equipos WHERE id=?');
+            $st->execute([(int)($_GET['id'] ?? 0)]);
+            $eq = $st->fetch();
+            if (!$eq) { http_response_code(404); pagina('No encontrado', '<p>Equipo inexistente.</p>'); break; }
+        }
+        // Recupera datos del formulario si hubo error de validación
+        $old = $_SESSION['form_old'] ?? null;
+        unset($_SESSION['form_old']);
         $areas  = $db->query('SELECT id, codigo, descripcion FROM areas WHERE activa=1 ORDER BY codigo')->fetchAll();
         $tipos  = $db->query('SELECT * FROM tipos_equipo WHERE activo=1 ORDER BY nombre_es')->fetchAll();
         $estados = $db->query('SELECT * FROM estados WHERE activo=1 ORDER BY id')->fetchAll();
-        pagina('Nuevo equipo', vista('equipo_form', [
-            'areas' => $areas, 'tipos' => $tipos, 'estados' => $estados, 'flash' => flash(),
+        pagina($eq ? 'Editar equipo' : 'Nuevo equipo', vista('equipo_form', [
+            'eq' => $eq, 'old' => $old, 'areas' => $areas, 'tipos' => $tipos,
+            'estados' => $estados, 'flash' => flash(),
         ]));
         break;
 
@@ -129,41 +197,67 @@ switch ($r) {
         break;
 
     case 'equipos.crear':
+    case 'equipos.actualizar':
         requiere_rol(ROL_TECNICO);
         csrf_check();
         $db = db();
+        $editar = ($r === 'equipos.actualizar');
+        $id = (int)($_POST['id'] ?? 0);
         $tipoId = (int)$_POST['tipo_id'];
         $areaId = (int)$_POST['area_id'];
         $tipo = $db->query('SELECT * FROM tipos_equipo WHERE id=' . $tipoId)->fetch();
-        $area = $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch();
+        $area = $areaId ? $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch() : null;
 
-        $hostname = null;
-        $corr = null;
-        if ($tipo && $area && $tipo['lleva_hostname']) {
-            $corr = nm_proximo_correlativo($db, $areaId, $tipoId);
-            $gen = nm_generar_hostname(nm_token_area($area['codigo']), $tipo['codigo'], $corr);
-            $hostname = $gen['hostname'];
+        if (!$tipo) {
+            flash('Seleccioná un tipo de equipo válido.', 'error');
+            redir($editar ? 'equipos.editar&id=' . $id : 'equipos.nuevo');
         }
 
-        $db->prepare(
-            'INSERT INTO equipos
-             (id_patrimonial, hostname, tipo_id, area_id, estado_id, correlativo,
-              marca, modelo, n_serie, n_parte, ip, titularidad, tenencia, tenedor,
-              responsable, observaciones, notas_tecnicas)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-        )->execute([
-            trim($_POST['id_patrimonial'] ?? '') ?: null,
-            $hostname, $tipoId, $areaId, (int)$_POST['estado_id'] ?: null, $corr,
-            trim($_POST['marca'] ?? ''), trim($_POST['modelo'] ?? ''),
-            trim($_POST['n_serie'] ?? ''), trim($_POST['n_parte'] ?? ''),
-            trim($_POST['ip'] ?? ''),
-            $_POST['titularidad'] ?? 'Municipal', $_POST['tenencia'] ?? 'En sede',
-            trim($_POST['tenedor'] ?? ''), trim($_POST['responsable'] ?? ''),
-            trim($_POST['observaciones'] ?? ''), trim($_POST['notas_tecnicas'] ?? ''),
-        ]);
-        $id = (int)$db->lastInsertId();
-        auditar('equipo', $id, 'alta', $hostname ?? ('id_patrimonial ' . ($_POST['id_patrimonial'] ?? '')));
-        flash('Equipo creado' . ($hostname ? " como «{$hostname}»." : '.'));
+        // Hostname editable: vacío = recomendación automática; cargado = se respeta y valida.
+        $res = nm_resolver_hostname($db, $tipo, $area, $_POST['hostname'] ?? '', $editar ? $id : null);
+        if ($res['errores']) {
+            $_SESSION['form_old'] = $_POST;
+            flash(implode(' ', $res['errores']), 'error');
+            redir($editar ? 'equipos.editar&id=' . $id : 'equipos.nuevo');
+        }
+        $hostname = $res['hostname'];
+
+        $campos = [
+            'id_patrimonial' => trim($_POST['id_patrimonial'] ?? '') ?: null,
+            'hostname'    => $hostname,
+            'tipo_id'     => $tipoId,
+            'area_id'     => $areaId ?: null,
+            'estado_id'   => (int)($_POST['estado_id'] ?? 0) ?: null,
+            'marca'       => trim($_POST['marca'] ?? ''),
+            'modelo'      => trim($_POST['modelo'] ?? ''),
+            'n_serie'     => trim($_POST['n_serie'] ?? ''),
+            'n_parte'     => trim($_POST['n_parte'] ?? ''),
+            'ip'          => trim($_POST['ip'] ?? ''),
+            'titularidad' => $_POST['titularidad'] ?? 'Municipal',
+            'tenencia'    => $_POST['tenencia'] ?? 'En sede',
+            'tenedor'     => trim($_POST['tenedor'] ?? ''),
+            'responsable' => trim($_POST['responsable'] ?? ''),
+            'observaciones' => trim($_POST['observaciones'] ?? ''),
+            'notas_tecnicas' => trim($_POST['notas_tecnicas'] ?? ''),
+        ];
+
+        if ($editar) {
+            $set = implode(', ', array_map(fn($c) => "$c=?", array_keys($campos)));
+            $args = array_values($campos);
+            $args[] = $id;
+            $db->prepare("UPDATE equipos SET $set, actualizado=datetime('now','localtime') WHERE id=?")
+               ->execute($args);
+            auditar('equipo', $id, 'modificación', (string)$hostname);
+            flash('Equipo actualizado.');
+        } else {
+            $campos['correlativo'] = $res['correlativo'];
+            $cols = implode(',', array_keys($campos));
+            $ph = implode(',', array_fill(0, count($campos), '?'));
+            $db->prepare("INSERT INTO equipos ($cols) VALUES ($ph)")->execute(array_values($campos));
+            $id = (int)$db->lastInsertId();
+            auditar('equipo', $id, 'alta', $hostname ?? ('patrimonial ' . ($campos['id_patrimonial'] ?? '')));
+            flash('Equipo creado' . ($hostname ? " como «{$hostname}»." : '.'));
+        }
         redir('equipos.ver&id=' . $id);
         break;
 
