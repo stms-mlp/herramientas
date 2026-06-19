@@ -16,6 +16,15 @@
         <th>Responsable</th><td><?= h($eq['responsable'] ?: '—') ?></td></tr>
   </table>
 
+  <?php if (!empty($atributos)): ?>
+    <h3 class="rep-sub">Ficha del tipo</h3>
+    <table class="rep-tabla">
+      <?php foreach ($atributos as $a): ?>
+        <tr><th><?= h($a['nombre']) ?></th><td><?= h($a['valor']) ?></td></tr>
+      <?php endforeach; ?>
+    </table>
+  <?php endif; ?>
+
   <h3 class="rep-sub">Componentes</h3>
   <?php if (!$componentes): ?>
     <p>Sin componentes registrados.</p>

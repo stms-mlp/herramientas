@@ -28,6 +28,7 @@ function db(): PDO
     if ($nuevo) {
         sembrar($pdo);
     }
+    asegurar_atributos($pdo);
     return $pdo;
 }
 
@@ -133,6 +134,14 @@ function migrar(PDO $db): void
         id     INTEGER PRIMARY KEY,
         nombre TEXT UNIQUE NOT NULL,
         activo INTEGER NOT NULL DEFAULT 1
+    );
+
+    -- Catálogo de valores reutilizables (marcas, modelos, etc.)
+    CREATE TABLE IF NOT EXISTS catalogo (
+        id    INTEGER PRIMARY KEY,
+        campo TEXT NOT NULL,   -- marca | modelo | comp_marca | comp_modelo
+        valor TEXT NOT NULL,
+        UNIQUE(campo, valor)
     );
 
     CREATE TABLE IF NOT EXISTS componentes (
@@ -288,5 +297,52 @@ function sembrar(PDO $db): void
     if (file_exists(CSV_AREAS)) {
         require_once __DIR__ . '/areas_import.php';
         importar_areas($db, CSV_AREAS);
+    }
+}
+
+/**
+ * Carga atributos sugeridos por tipo (editables luego). Idempotente: sólo
+ * agrega los defaults a un tipo que todavía no tiene atributos definidos.
+ */
+function asegurar_atributos(PDO $db): void
+{
+    // [nombre, tipo_dato, opciones]
+    $defaults = [
+        'DK' => [['Sistema operativo', 'texto', '']],
+        'NB' => [['Sistema operativo', 'texto', ''], ['Pantalla', 'texto', ''],
+                 ['Batería', 'texto', ''], ['MAC WiFi', 'texto', '']],
+        'SV' => [['Sistema operativo', 'texto', ''], ['Roles/Servicios', 'texto', ''],
+                 ['RAID', 'texto', '']],
+        'RT' => [['Firmware', 'texto', ''], ['Puertos LAN', 'numero', ''],
+                 ['Usuario admin', 'texto', '']],
+        'SW' => [['Puertos', 'numero', ''], ['Administrable', 'booleano', ''],
+                 ['PoE', 'booleano', ''], ['VLANs', 'texto', '']],
+        'DV' => [['Usuario', 'texto', ''], ['Cantidad de cámaras', 'numero', ''],
+                 ['Almacenamiento', 'texto', ''], ['Días de grabación', 'numero', ''],
+                 ['Marca de cámaras', 'texto', '']],
+        'PR' => [['Tecnología', 'lista', 'Láser,Inyección,Sólida'], ['Color', 'booleano', ''],
+                 ['Conectividad', 'lista', 'USB,Red,WiFi,USB+Red'], ['Dúplex', 'booleano', ''],
+                 ['Contador de páginas', 'numero', ''], ['Modelo de tóner', 'texto', '']],
+        'DY' => [['Pulgadas', 'texto', ''], ['Resolución', 'texto', ''], ['Panel', 'texto', '']],
+        'UP' => [['Potencia (VA)', 'numero', ''], ['Tomas', 'numero', ''], ['Autonomía', 'texto', '']],
+        'VR' => [['Potencia', 'texto', ''], ['Tomas', 'numero', '']],
+        'MB' => [['IMEI', 'texto', ''], ['Línea/Número', 'texto', ''], ['Sistema operativo', 'texto', '']],
+    ];
+    $tipos = $db->query('SELECT id, codigo FROM tipos_equipo')->fetchAll();
+    $cuenta = $db->prepare('SELECT COUNT(*) FROM atributos_tipo WHERE tipo_id=?');
+    $ins = $db->prepare(
+        'INSERT INTO atributos_tipo (tipo_id, nombre, tipo_dato, opciones, orden) VALUES (?,?,?,?,?)'
+    );
+    foreach ($tipos as $t) {
+        if (empty($defaults[$t['codigo']])) {
+            continue;
+        }
+        $cuenta->execute([$t['id']]);
+        if ((int)$cuenta->fetchColumn() > 0) {
+            continue; // ya tiene atributos: no piso
+        }
+        foreach ($defaults[$t['codigo']] as $o => [$nombre, $dato, $opc]) {
+            $ins->execute([$t['id'], $nombre, $dato, $opc ?: null, $o]);
+        }
     }
 }

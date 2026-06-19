@@ -1,5 +1,7 @@
 <?php
-/** @var array|null $eq @var array|null $old @var array $areas @var array $tipos @var array $estados */
+/** @var array|null $eq @var array|null $old @var array $areas @var array $tipos @var array $estados
+ *  @var array $componentes @var array $valores @var array $atrMapa @var array $tiposComp
+ *  @var array $catMarca @var array $catModelo */
 $edit = $eq !== null;
 $val = function (string $k, string $def = '') use ($eq, $old) {
     if ($old !== null && array_key_exists($k, $old)) return (string)$old[$k];
@@ -39,7 +41,6 @@ $sel = fn(string $k, $v) => (string)$val($k) === (string)$v ? 'selected' : '';
         <input name="id_patrimonial" value="<?= h($val('id_patrimonial')) ?>" placeholder="ej. MLP-0042">
       </label>
     </div>
-
     <label>Hostname <span class="hint">(recomendación editable — dejalo vacío para autogenerar)</span>
       <div class="host-row">
         <input name="hostname" id="hostname" class="mono host-input"
@@ -52,12 +53,17 @@ $sel = fn(string $k, $v) => (string)$val($k) === (string)$v ? 'selected' : '';
   </fieldset>
 
   <fieldset>
+    <legend>Ficha del tipo</legend>
+    <div id="attr-cont"><p class="ayuda">Elegí un tipo de equipo para ver sus campos.</p></div>
+  </fieldset>
+
+  <fieldset>
     <legend>Datos técnicos</legend>
     <p class="ayuda">Marca y modelo son opcionales: para equipos <strong>armados/genéricos</strong>
        dejalos vacíos (se mostrará «Genérico (armado)») y cargá el detalle en Componentes.</p>
     <div class="cols">
-      <label>Marca <input name="marca" value="<?= h($val('marca')) ?>" placeholder="(opcional)"></label>
-      <label>Modelo <input name="modelo" value="<?= h($val('modelo')) ?>" placeholder="(opcional)"></label>
+      <label>Marca <input name="marca" list="dl-marca" value="<?= h($val('marca')) ?>" placeholder="(opcional)"></label>
+      <label>Modelo <input name="modelo" list="dl-modelo" value="<?= h($val('modelo')) ?>" placeholder="(opcional)"></label>
       <label>N° de serie <input name="n_serie" value="<?= h($val('n_serie')) ?>"></label>
       <label>N° de parte <input name="n_parte" value="<?= h($val('n_parte')) ?>"></label>
       <label>IP <input name="ip" value="<?= h($val('ip')) ?>" placeholder="192.168.0.x"></label>
@@ -69,6 +75,20 @@ $sel = fn(string $k, $v) => (string)$val($k) === (string)$v ? 'selected' : '';
         </select>
       </label>
     </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Componentes</legend>
+    <div class="import-row">
+      <input type="file" id="reporte" accept=".txt,.html,.htm,.csv,text/plain">
+      <button type="button" id="btn-analizar" class="btn-sec">Analizar CPU-Z / HWMonitor</button>
+      <span id="imp-msg" class="ayuda"></span>
+    </div>
+    <table class="tabla comp-tabla">
+      <thead><tr><th>Tipo</th><th>Marca</th><th>Modelo</th><th>N° serie</th><th>Velocidad</th><th>Memoria</th><th>Bus</th><th></th></tr></thead>
+      <tbody id="comp-body"></tbody>
+    </table>
+    <button type="button" id="btn-add-comp" class="btn-sec">+ Componente</button>
   </fieldset>
 
   <fieldset>
@@ -104,41 +124,60 @@ $sel = fn(string $k, $v) => (string)$val($k) === (string)$v ? 'selected' : '';
   </div>
 </form>
 
+<?php // datalists compartidos ?>
+<datalist id="dl-marca"><?php foreach ($catMarca as $m): ?><option value="<?= h($m) ?>"><?php endforeach; ?></datalist>
+<datalist id="dl-modelo"><?php foreach ($catModelo as $m): ?><option value="<?= h($m) ?>"><?php endforeach; ?></datalist>
+<datalist id="dl-comp-tipo"><?php foreach ($tiposComp as $c): ?><option value="<?= h($c) ?>"><?php endforeach; ?></datalist>
+<datalist id="dl-comp-marca"><?php foreach ($catMarca as $m): ?><option value="<?= h($m) ?>"><?php endforeach; ?></datalist>
+<datalist id="dl-comp-modelo"><?php foreach ($catModelo as $m): ?><option value="<?= h($m) ?>"><?php endforeach; ?></datalist>
+
+<script src="assets/equipos.js"></script>
 <script>
+window.ATTR_MAP = <?= json_encode($atrMapa, JSON_UNESCAPED_UNICODE) ?>;
+const VALORES = <?= json_encode((object)$valores, JSON_UNESCAPED_UNICODE) ?>;
+const COMPS   = <?= json_encode(array_values($componentes), JSON_UNESCAPED_UNICODE) ?>;
+
 const tipo = document.getElementById('tipo'),
       area = document.getElementById('area'),
       hostInput = document.getElementById('hostname'),
       avisos = document.getElementById('avisos'),
-      btn = document.getElementById('btn-sugerir');
+      attrCont = document.getElementById('attr-cont'),
+      compBody = document.getElementById('comp-body');
 let editado = <?= $val('hostname') !== '' ? 'true' : 'false' ?>;
 
 hostInput.addEventListener('input', () => { editado = true; });
-
-function tipoLlevaHost() {
-  const opt = tipo.options[tipo.selectedIndex];
-  return !opt || opt.dataset.host !== '0';
-}
+function llevaHost() { const o = tipo.options[tipo.selectedIndex]; return !o || o.dataset.host !== '0'; }
 
 async function sugerir(forzar) {
-  if (!tipoLlevaHost()) {
+  if (!llevaHost()) {
     hostInput.value = ''; hostInput.disabled = true;
     avisos.innerHTML = '<em>Este tipo se asocia a un equipo padre y no genera nombre de red.</em>';
     return;
   }
   hostInput.disabled = false;
-  if (!forzar && editado) return;          // no pisar lo que el usuario editó
-  const t = tipo.value, a = area.value;
-  if (!t || !a) { avisos.innerHTML = ''; return; }
+  if (!forzar && editado) return;
+  if (!tipo.value || !area.value) { avisos.innerHTML = ''; return; }
   try {
-    const j = await (await fetch('?r=equipos.preview&area=' + a + '&tipo=' + t)).json();
+    const j = await (await fetch('?r=equipos.preview&area=' + area.value + '&tipo=' + tipo.value)).json();
     if (j.hostname) { hostInput.value = j.hostname; editado = false; }
     avisos.innerHTML = (j.avisos || []).map(x => '<div class="aviso">⚠ ' + x + '</div>').join('')
-                      + (j.error ? '<div class="aviso">' + j.error + '</div>' : '');
+                     + (j.error ? '<div class="aviso">' + j.error + '</div>' : '');
   } catch (e) {}
 }
 
-tipo.addEventListener('change', () => sugerir(false));
+function refrescarTipo() {
+  nmRenderAtributos(attrCont, tipo.value, '', VALORES);
+  sugerir(false);
+}
+tipo.addEventListener('change', refrescarTipo);
 area.addEventListener('change', () => sugerir(false));
-btn.addEventListener('click', () => sugerir(true));
-if (!tipoLlevaHost()) sugerir(false);
+document.getElementById('btn-sugerir').addEventListener('click', () => sugerir(true));
+document.getElementById('btn-add-comp').addEventListener('click', () => compBody.appendChild(nmCompRow('', {})));
+document.getElementById('btn-analizar').addEventListener('click', () =>
+  nmAnalizar(document.getElementById('reporte'), compBody, '', document.getElementById('imp-msg')));
+
+// Estado inicial (alta o edición)
+if (tipo.value) nmRenderAtributos(attrCont, tipo.value, '', VALORES);
+COMPS.forEach(c => compBody.appendChild(nmCompRow('', c)));
+if (!llevaHost()) sugerir(false);
 </script>
