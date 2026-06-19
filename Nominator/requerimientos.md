@@ -127,7 +127,8 @@ componente tiene sus características.
   `n_parte`, `ip`, `fecha_alta`, `observaciones`, **+ gestión:**
   `responsable`, `compra_fecha`/`compra_factura`, `garantia`, **+ titularidad y
   tenencia (§5.3):** `titularidad` (Municipal / Personal), `tenencia`/`ubicacion`
-  (En sede / Domicilio de empleado–teletrabajo), `tenedor` (persona que lo tiene).
+  (En sede / Domicilio de empleado–teletrabajo), `tenedor` (persona que lo tiene),
+  **+ notas técnicas/operativas (§5.4).**
 - **Componente** — pertenece a un `Equipo`. `tipo_componente`
   (CPU / RAM / Disco / GPU / Motherboard / etc.) con atributos:
   **marca, modelo, n/s, velocidad, memoria, bus**. **Importable** desde reportes
@@ -161,6 +162,26 @@ Dos ejes independientes, importantes para la declaración de inventario (§8.1):
 > Un equipo puede ser **municipal pero estar fuera de sede** (teletrabajo): sigue
 > siendo del municipio y se declara, aunque no esté en el edificio. Y un equipo
 > **personal en sede** se usa pero no se declara como municipal.
+
+### 5.4 Notas técnicas / operativas
+
+Información que ayuda al técnico a trabajar sobre el equipo. Separada de las
+observaciones generales y **no** incluida en el extracto que se entrega al área
+(§8.1). Ejemplos:
+
+- **Credenciales de acceso** (usuario/clave del equipo o de servicios). ⚠️ Dato
+  **sensible**: visible sólo para usuarios autorizados (§9), nunca en extractos
+  ni fichas que salen del área de sistemas.
+- **Rol/función del equipo**: ej. "funciona como servidor de archivos",
+  "controlador de dominio", "host de cámaras".
+- **Software específico** que corre o del que depende.
+- **Autorizaciones/dependencias externas**: ej. usa **VPN con organismos
+  nacionales** (ANSES, AFIP/ARCA, RENAPER, etc.) que requiere autorización o
+  configuración de un tercero; tocar el equipo puede afectar ese enlace.
+
+> Pueden modelarse como un campo de notas técnicas + opcionalmente "funciones"
+> (etiquetas auxiliares) para poder **filtrar** equipos por rol (p. ej. listar
+> todos los que tienen VPN con organismos nacionales).
 
 ### 5.2 Importación de características (CPU-Z / HWMonitor)
 
