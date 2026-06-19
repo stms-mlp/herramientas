@@ -1,0 +1,5 @@
+# Base de datos SQLite generada en runtime
+datos/*.sqlite
+datos/*.sqlite-*
+# Adjuntos subidos
+adjuntos/

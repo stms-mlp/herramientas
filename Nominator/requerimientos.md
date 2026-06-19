@@ -1,1 +1,424 @@
+# Nominator — Sistema de Nomenclatura e Inventario de Equipos
 
+> Herramienta para **nombrar de forma unívoca** y **mantener el inventario** del
+> equipamiento informático y de hardware de la organización (Municipalidad de
+> Lago Puelo), generando códigos a partir de la estructura de reparticiones y
+> registrando datos técnicos, componentes, insumos, accesos remotos y relaciones
+> entre equipos.
+
+Sustituye al inventario anterior en HTML (`Inventario23/`). **Es un sistema
+nuevo: se aplican buenas prácticas y NO se arrastran estructuras del sistema
+viejo que no aporten o puedan mejorarse.** El material viejo sirve sólo como
+referencia y eventual fuente de algunos datos.
+
+---
+
+## 1. Objetivo
+
+1. **Nomenclar**: dado un equipo y el área a la que pertenece, generar un nombre
+   de red (hostname) único, válido y legible.
+2. **Inventariar**: guardar datos técnicos del equipo y de sus **componentes**.
+3. **Relacionar**: vincular equipos entre sí (un desktop tiene tal monitor y se
+   conecta a tal impresora).
+4. **Trazar**: registrar mudanzas y cambios, sin perder la identidad ni la
+   historia del equipo.
+5. **Listar por repartición** y emitir un **resumen de hardware por equipo**
+   legible.
+
+---
+
+## 2. Stack técnico y despliegue
+
+- **Lenguaje:** PHP plano (sin framework pesado), con **PDO + SQLite**.
+- **Sin dependencias / sin Composer:** se sube por FTP a **hosting compartido
+  (Donweb)** y funciona sin configuración especial.
+- **Ruteo por query-string** (`index.php?r=...`) para no depender de
+  `mod_rewrite`.
+- Base de datos en archivo `datos/nominator.sqlite`, protegido del acceso web
+  por `.htaccess`.
+- **Login requerido** (§9). Lógica de negocio aislada en `lib/` por si más
+  adelante se migra a un microframework.
+
+---
+
+## 3. Nomenclatura (regla central)
+
+Cada equipo tiene **dos identificadores** con propósitos distintos:
+
+| Identificador | Para qué sirve | ¿Cambia en mudanza? | Ejemplo |
+|---|---|---|---|
+| **ID patrimonial** | Identificador **externo**, cargado a mano desde otro sistema patrimonial. **Texto libre.** A esto se "cuelgan" componentes, relaciones, accesos e historial. **Estable.** | **No** | `MLP-0042` |
+| **Hostname** (NetBIOS/DNS) | Nombre real del equipo en Windows/red. | **Sí** (refleja el área actual) | `SGYA-DA-DK001` |
+
+### 3.1 Reglas del hostname
+
+- Sólo caracteres válidos **NetBIOS y DNS**: `A–Z`, `0–9` y guion medio `-`.
+  - Sin acentos, sin espacios, sin `#`, `.`, `_` ni símbolos. Mayúsculas.
+  - Sin guion al inicio/fin ni guiones consecutivos.
+- **Largo máximo 15 caracteres** (límite NetBIOS; DNS admite 63, manda el menor).
+- **Formato:** `{repartición-invertida}-{TIPO}{NNN}`
+  - *Repartición invertida*: el código del organigrama se invierte y se
+    reemplaza `#` por `-`. Ej.: `DA#SGYA` → `SGYA-DA` (padre primero,
+    dependencia después).
+  - *TIPO*: código de 2 letras del tipo de equipo (ver §4).
+  - *NNN*: correlativo de 3 dígitos **por área y por tipo**.
+  - Ejemplo: `SGYA-DA-DK001` = Sec. de Gobierno y Administración → Dirección de
+    Administración → Desktop 001.
+
+### 3.2 Manejo del límite de 15 caracteres
+
+Algunas reparticiones largas se pasan (ej. `SGYA-DEESOE-DK001` = 17). El sistema:
+
+1. Si el nombre completo entra en 15 → lo usa.
+2. Si no → cae a **sólo la dependencia hoja** (`DEESOE-DK001`) y **avisa**.
+3. Si aún excede → trunca de forma controlada y avisa.
+4. Verifica unicidad global del hostname; ante colisión, ajusta el correlativo.
+
+> **Nota de datos:** el organigrama trae un código duplicado real (`DEPC#SGYA`
+> figura como "Prensa y Ceremonial" **y** "Protección Civil"). El sistema debe
+> **detectarlo y marcarlo** al importar para corregir uno (ej. `DEPCIV#SGYA`),
+> ya que generarían hostnames colisionantes.
+
+---
+
+## 4. Tipos de equipo
+
+- Código de **2 letras** derivado del **nombre en inglés** (la interfaz los
+  muestra en español). Editable desde tabla auxiliar (§7).
+- Flag **"lleva hostname"**: los equipos de red obtienen nombre NetBIOS/DNS; los
+  periféricos (monitor, UPS, etc.) entran al inventario y se asocian a un equipo
+  padre, pero no generan hostname.
+
+| Tipo (ES) | Nombre EN | Código | ¿Hostname? |
+|---|---|---|---|
+| PC de Escritorio | Desktop | `DK` ✅conf. | ✅ |
+| Notebook | Notebook | `NB` | ✅ |
+| Server | Server | `SV` | ✅ |
+| Router | Router | `RT` | ✅ |
+| Switch | Switch | `SW` | ✅ |
+| DVR | DVR | `DV` | ✅ |
+| Impresora | Printer | `PR` | ✅ |
+| Monitor | Display | `DY` | ❌ |
+| UPS | UPS | `UP` | ❌ |
+| Estabilizador | Voltage Regulator | `VR` | ❌ |
+| Celular | Mobile | `MB` | ❌ |
+
+> `DK` confirmado. `VR` y `MB` quedan como valor por defecto (editables en tabla
+> auxiliar).
+
+---
+
+## 5. Modelo de datos
+
+Orientado a objetos/componentes: un equipo **contiene** componentes, y cada
+componente tiene sus características.
+
+### 5.1 Entidades
+
+- **Area (Repartición)** — importada del organigrama (`areas_iniciales.csv`).
+  Campos: `codigo` (ej. `DA#SGYA`), `descripcion`, `estructura`
+  (Secretaría/Dirección/Departamento/División), `codigo_padre`, `abreviatura`,
+  `ubicacion`, `activa`. **Versionable** (las áreas se crean, cambian y
+  desaparecen → §6 y §7).
+- **TipoEquipo** — `codigo` (2 letras EN), `nombre_es`, `lleva_hostname`, **+
+  define su ficha de atributos específicos (§5.5).**
+- **AtributoTipo** — definición de un campo propio de un tipo: `tipo_id`,
+  `nombre` (ej. "Cantidad de cámaras"), `tipo_dato` (texto/número/booleano/
+  fecha/lista), `obligatorio`, `sensible` (ver §5.4), `orden`.
+- **ValorAtributo** — valor de un `AtributoTipo` para un `Equipo` concreto.
+- **Estado** — En uso / En depósito / En reparación / De baja. (Auxiliar.)
+- **Equipo** — `id_patrimonial` (texto libre, externo, estable), `hostname`,
+  `tipo_id`, `area_actual_id`, `estado_id`, `marca`, `modelo`, `n_serie`,
+  `n_parte`, `ip`, `fecha_alta`, `observaciones`, **+ gestión:**
+  `responsable`, `compra_fecha`/`compra_factura`, `garantia`, **+ titularidad y
+  tenencia (§5.3):** `titularidad` (Municipal / Personal), `tenencia`/`ubicacion`
+  (En sede / Domicilio de empleado–teletrabajo), `tenedor` (persona que lo tiene),
+  **+ notas técnicas/operativas (§5.4)**, **+ baja (§9.3):** `baja_fecha`,
+  `baja_motivo`, `baja_destino` (descarte / donación / robo / reemplazo).
+- **Componente** — pertenece a un `Equipo`. `tipo_componente`
+  (CPU / RAM / Disco / GPU / Motherboard / etc.) con atributos:
+  **marca, modelo, n/s, velocidad, memoria, bus**. **Importable** desde reportes
+  de **CPU-Z** y **HWMonitor** (§5.2).
+- **AccesoRemoto** — `equipo_id`, `servicio` (Anydesk / VNC / RDP / TeamViewer…
+  desde tabla auxiliar), `identificador` (ej. ID de Anydesk), `nota`.
+- **Relacion** — `equipo_a_id`, `equipo_b_id`, `tipo`
+  (usa_monitor / conecta_impresora / componente_de / otro).
+- **Movimiento** — `equipo_id`, `fecha`, `area_origen_id`, `area_destino_id`,
+  `hostname_anterior`, `hostname_nuevo`, `motivo`, `usuario`.
+- **Insumo de impresora** — **ligado a la impresora** (no es un registro suelto
+  como en el sistema viejo): `equipo_id` (impresora), `tipo` (tóner / unidad de
+  imagen / chip / cartucho), `modelo`, `nota`/`stock`. Una impresora declara qué
+  insumos usa.
+- **RedWifi / AccesoRed** — para **routers y redes WiFi** (`equipo_id`):
+  `ssid`, `usuario`, `clave`, `banda` (2.4/5GHz), `oculta`, `nota`. A diferencia
+  de las claves de §9.1, **estas se guardan en el sistema** porque el técnico las
+  consulta seguido; se muestran **en claro al admin/técnico** y **enmascaradas
+  (`••••••`) al rol lectura** (§9.1.1). Un router puede tener varios SSIDs.
+- **Usuario** — `usuario`, `hash_clave`, `rol` (admin / técnico / lectura),
+  `activo`. Para el login del sistema (§9).
+- **Auditoria** — `fecha`, `usuario`, `entidad`, `entidad_id`, `accion`
+  (alta/modificación/baja), `detalle`. Registro de quién cambió qué (§9.2).
+- **Adjunto** — `equipo_id`, `tipo` (foto / factura / remito / acta de entrega /
+  otro), `archivo`, `descripcion`, `fecha` (§9.4).
+- **Reparacion** — `equipo_id`, `fecha`, `falla`, `diagnostico`, `solucion`,
+  `proveedor`, `costo`, `estado` (§9.6). Asociada al estado "En reparación".
+- **HistorialResponsable** — `equipo_id`, `responsable`, `desde`, `hasta`,
+  `motivo` (§9.5). El responsable puede cambiar sin que el equipo se mude.
+- **Software / Licencia** (opcional) — `equipo_id`, `producto` (SO, Office,
+  antivirus…), `clave/licencia` (referencia, no la clave en claro), `vencimiento`
+  (§9.7).
+
+> No se modela una "Red/IP" aparte: la IP es un campo del propio equipo.
+
+### 5.3 Titularidad y tenencia (ubicación física)
+
+Dos ejes independientes, importantes para la declaración de inventario (§8.1):
+
+- **Titularidad** — de quién es el equipo:
+  - **Municipal**: propiedad del municipio → se inventaría y declara.
+  - **Personal**: del empleado, usado para trabajar pero **NO** es del municipio
+    → se registra para trazabilidad/relaciones, pero **se excluye** de la
+    declaración patrimonial y se marca claramente como personal.
+- **Tenencia / ubicación física** — dónde está físicamente:
+  - **En sede** (en el edificio/área).
+  - **En domicilio de empleado** (teletrabajo), identificando al `tenedor`.
+
+> Un equipo puede ser **municipal pero estar fuera de sede** (teletrabajo): sigue
+> siendo del municipio y se declara, aunque no esté en el edificio. Y un equipo
+> **personal en sede** se usa pero no se declara como municipal.
+
+### 5.4 Notas técnicas / operativas
+
+Información que ayuda al técnico a trabajar sobre el equipo. Separada de las
+observaciones generales y **no** incluida en el extracto que se entrega al área
+(§8.1). Ejemplos:
+
+- **Credenciales de acceso** (usuario/clave del equipo o de servicios).
+  ⚠️ **Nominator NO almacena contraseñas.** El secreto vive en **KeePass**; en el
+  sistema se guarda sólo una **referencia a la entrada de KeePass** (título/ruta
+  dentro del `.kdbx`) y, a lo sumo, el **usuario** (no la clave). Ver §9.1.
+- **Rol/función del equipo**: ej. "funciona como servidor de archivos",
+  "controlador de dominio", "host de cámaras".
+- **Software específico** que corre o del que depende.
+- **Autorizaciones/dependencias externas**: ej. usa **VPN con organismos
+  nacionales** (ANSES, AFIP/ARCA, RENAPER, etc.) que requiere autorización o
+  configuración de un tercero; tocar el equipo puede afectar ese enlace.
+
+> Pueden modelarse como un campo de notas técnicas + opcionalmente "funciones"
+> (etiquetas auxiliares) para poder **filtrar** equipos por rol (p. ej. listar
+> todos los que tienen VPN con organismos nacionales).
+
+### 5.5 Atributos específicos por tipo de equipo
+
+Cada tipo de equipo se **modela por separado**: además de los campos comunes
+(marca, modelo, n/s, IP, área, estado…), cada tipo define su propia **ficha de
+atributos** mediante las entidades `AtributoTipo` + `ValorAtributo`. Así se
+agregan/quitan campos por tipo **desde la interfaz**, sin tocar el esquema de la
+base ni el código.
+
+Ejemplos de ficha por tipo:
+
+- **DVR**: usuario y **referencia a la clave en KeePass** (no la clave en sí,
+  §9.1), cantidad de cámaras, almacenamiento (capacidad/discos), IP,
+  marca/modelo de cámaras, días de grabación.
+- **Impresora**: tecnología (láser/inyección), color/monocromática,
+  conectividad (USB/red/wifi), dúplex, insumos compatibles (§Insumo de
+  impresora), contador de páginas.
+- **Notebook**: pantalla, batería, MAC wifi, etc.
+- **Switch**: cantidad de puertos, administrable, PoE.
+- **UPS / Estabilizador**: VA/potencia, cantidad de tomas, autonomía.
+
+> Los **componentes internos** (CPU, RAM, discos, GPU…) se modelan aparte como
+> `Componente` (§5.1) y se pueden importar de CPU-Z/HWMonitor. Los
+> `AtributoTipo` cubren las características del **aparato como un todo** propias
+> de su tipo. Para secretos (ej. clave de DVR) se guarda la **referencia a
+> KeePass**, nunca la contraseña (§9.1).
+
+### 5.2 Importación de características (CPU-Z / HWMonitor)
+
+- El sistema **recibe y procesa** un reporte de **CPU-Z** (`.txt`/`.html`) o
+  **HWMonitor** y extrae, por componente, los datos clave: **marca, modelo, n/s,
+  velocidad, memoria y bus** (procesador, RAM, placa, discos, GPU…).
+- Objetivo: cargar specs sin tipeo manual y de forma consistente, para alimentar
+  el **resumen de hardware** (§8.1).
+
+---
+
+## 6. Mudanzas y cambios
+
+- El **ID patrimonial es estable**: mover un equipo **no** rompe sus
+  componentes, relaciones, accesos ni historia.
+- Al mudar un equipo de área, el sistema:
+  1. Registra un **Movimiento** (origen → destino, fecha, motivo, usuario).
+  2. Opcionalmente **regenera el hostname** según la nueva área (guardando el
+     anterior), o lo conserva.
+- Como las áreas mismas cambian (se renombran, aparecen, desaparecen), **todo
+  valor que define nombres vive en tablas auxiliares editables** (§7), nunca
+  hardcodeado.
+
+---
+
+## 7. Tablas auxiliares (editables desde la interfaz)
+
+- **Áreas / Reparticiones** (ABM; reflejan cambios del organigrama).
+- **Tipos de equipo** (código, nombre, flag hostname) **y su ficha de atributos
+  específicos** (§5.5: alta/baja de campos por tipo).
+- **Estados**.
+- **Servicios de acceso remoto** (Anydesk, VNC, RDP…).
+- **Tipos de componente**.
+- **Usuarios y roles** del sistema.
+
+---
+
+## 8. Funcionalidades (alcance)
+
+- ABM de equipos con **previsualización en vivo del hostname** y validación
+  NetBIOS/DNS (caracteres y longitud).
+- Selección del **área** desde el organigrama para generar el código.
+- ABM de componentes + **importación CPU-Z/HWMonitor**.
+- **Accesos remotos** por equipo (Anydesk/VNC/…).
+- **Relaciones** entre equipos (monitor↔desktop, desktop→impresora).
+- **Mudanzas** con historial.
+- **Insumos** ligados a cada impresora.
+- **Listado por repartición** (vista principal del inventario, agrupable por
+  área) + filtros por tipo, estado e IP.
+- ABM de **tablas auxiliares**.
+- **Login con roles** (admin / técnico / lectura) y **auditoría** de cambios.
+- **Baja formal** de equipos (motivo/destino) e **historial de responsable**.
+- **Adjuntos** (fotos, factura/remito, acta de entrega).
+- **Reparaciones/mantenimiento** por equipo.
+- **Etiqueta imprimible con QR** por equipo.
+- **Backup** de la base y **exportación** de listados/extractos a CSV y PDF.
+
+### 8.1 Resumen de hardware y extracto por repartición
+
+- **Por equipo:** ficha de **resumen de hardware** (imprimible/exportable),
+  equivalente a la del inventario viejo pero **estructurada y legible**: en lugar
+  del string apelmazado `Athlon 3000G + Prime A320M-K + (1) DDR4 8GB + SSD 220GB
+  HDD 1TB`, una ficha clara con identificación (hostname, ID patrimonial, área,
+  estado, titularidad y tenencia), componentes (CPU, placa, RAM, discos, GPU…),
+  accesos remotos y equipos asociados.
+- **Por repartición (extracto / declaración de inventario):** cuando un área
+  solicita el listado de los equipos con que cuenta, el sistema **emite un
+  extracto entregable** que el área usa en su **declaración de inventario**
+  patrimonial.
+  - Incluye los equipos **municipales** del área (en sede y en teletrabajo).
+  - **Excluye** los equipos **personales** (o los lista aparte, claramente
+    marcados como no municipales), para que no se declaren como propios del
+    municipio.
+
+---
+
+## 9. Gestión, seguridad y trazabilidad
+
+### 9.0 Usuarios y roles
+
+- **Login requerido** (no acceso libre). Sesión simple, adecuada a hosting
+  compartido. Contraseñas de usuarios guardadas como **hash** (nunca en claro).
+- **Roles:**
+  - **Admin** — todo, incluida la gestión de usuarios y tablas auxiliares.
+  - **Técnico** — ABM de equipos, componentes, mudanzas, reparaciones, etc.
+  - **Lectura** — sólo consulta y generación de extractos.
+
+### 9.1 Credenciales de equipos (KeePass)
+
+- **Nominator NO guarda contraseñas de equipos/servicios.** El secreto se
+  gestiona en **KeePass** (`.kdbx`).
+- El sistema guarda sólo una **referencia a la entrada de KeePass**: de
+  preferencia el **UUID de la entrada** (estable aunque se renombre o se mueva de
+  grupo), y como ayuda visual el **título/ruta** (ej. `Routers/SGYA-DA-RT001`).
+  Opcionalmente el **nombre de usuario**. **Nunca la clave.**
+- **No se integra ninguna librería de KeePass** (KeePassPHP u otra): hacerlo
+  exigiría subir el `.kdbx` y la clave maestra al servidor, reintroduciendo el
+  riesgo que se quiere evitar, además de sumar dependencias y soporte de Argon2
+  (KDBX4) problemático en hosting compartido. El técnico abre su KeePass y busca
+  la entrada por ese UUID/título.
+- Beneficio: menos riesgo en hosting compartido y **no hace falta** un esquema
+  fino de roles para proteger secretos, porque los secretos no están en la app.
+
+### 9.1.1 Excepción: credenciales de red (routers / WiFi)
+
+- Para **routers y redes WiFi** sí se guardan en el sistema el **usuario, los
+  SSIDs y las claves** (entidad `RedWifi`), porque el técnico las necesita a
+  mano con frecuencia.
+- **Visibilidad por rol:**
+  - **Admin / Técnico**: ven las claves **en claro** (con botón "mostrar").
+  - **Lectura**: las ve **enmascaradas** (`••••••`); no puede revelarlas ni
+    exportarlas.
+- No aparecen en extractos ni fichas que salen del área de sistemas.
+
+### 9.2 Auditoría
+
+- Registro de **quién hizo qué y cuándo**: altas, bajas y modificaciones de
+  equipos y datos clave (entidad `Auditoria`). Necesario para rendir cuentas en
+  un organismo público.
+
+### 9.3 Ciclo de vida / baja formal
+
+- Estados de vida del equipo, incluida la **baja** con `baja_fecha`,
+  `baja_motivo` y `baja_destino` (descarte / donación / robo / reemplazo).
+- Los equipos dados de baja salen de los listados activos y del extracto de
+  declaración, pero **se conservan** para historial.
+
+### 9.4 Adjuntos
+
+- Archivos por equipo: **fotos**, **factura/remito** de compra y, sobre todo,
+  **acta de entrega** firmada para equipos en teletrabajo o personales (deslinde
+  de responsabilidad).
+
+### 9.5 Historial de responsable
+
+- Además del historial de **mudanzas** (área), se registra el historial de
+  **responsable/tenedor** (un equipo cambia de manos sin mudarse de área).
+
+### 9.6 Reparaciones / mantenimiento
+
+- Registro de fallas, diagnóstico, solución, proveedor y costo, vinculado al
+  estado "En reparación".
+
+### 9.7 Software y licencias (opcional / fase 2)
+
+- Inventario básico de software relevante (SO, Office, antivirus) y vencimiento
+  de licencias. La clave/licencia se guarda como referencia, no en claro.
+
+### 9.8 Backup y exportación
+
+- **Backup de la base** (SQLite es el único punto de verdad): botón para
+  **descargar** el `.sqlite` y/o exportar a SQL.
+- **Exportación de listados** y del **extracto por repartición** a **CSV y PDF**.
+
+### 9.9 Etiquetas y QR
+
+- Generar una **etiqueta imprimible** por equipo (hostname + ID patrimonial +
+  **QR**) para pegar en el gabinete y escanearla luego.
+
+### 9.10 Validaciones de integridad
+
+- **N° de serie único** (avisa si se repite).
+- **Hostname único** global (§3.2).
+- **IP duplicada**: avisa si se repite en el mismo segmento.
+
+---
+
+## 10. Decisiones tomadas
+
+1. Código `DK` (Desktop) **confirmado**; resto editable en tabla auxiliar.
+2. **ID patrimonial:** texto libre, cargado a mano desde otro sistema (formato
+   tipo `MLP-0042`).
+3. **CPU-Z/HWMonitor:** levantar marca, modelo, n/s, velocidad, memoria, bus.
+4. **Campos de gestión:** responsable, fecha/factura de compra, garantía.
+5. **Login:** requerido, con roles admin / técnico / lectura.
+6. **Claves de equipos:** NO se guardan en Nominator; se referencia la entrada
+   de **KeePass** (a lo sumo se guarda el usuario).
+7. **Incluidos en alcance:** auditoría, baja formal, adjuntos (incl. acta de
+   entrega), historial de responsable, reparaciones, etiqueta QR, backup y
+   exportación CSV/PDF, validaciones de unicidad.
+8. **Fase 2 (anotado, no bloqueante):** inventario de software/licencias.
+
+---
+
+## 11. Material de referencia (`Inventario23/`)
+
+`Areas.html`, `Planilla Inv..html`, `Red.html`, `Toners.html` y las hojas por
+área. Se usan sólo como referencia/fuente eventual de datos; **no** se replican
+sus estructuras.
