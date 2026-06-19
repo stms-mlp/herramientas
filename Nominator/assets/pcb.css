@@ -102,6 +102,13 @@ h2{ font-family:var(--mono); color:var(--cyan); margin-top:1.6rem; font-size:1.0
 .chip .n{ display:block; font-family:var(--mono); font-size:2rem; color:var(--oro-2); }
 .chip.alerta{ border-color:var(--rojo); }
 .chip.alerta .n{ color:var(--rojo); }
+a.chip{ transition:transform .08s, border-color .08s; }
+a.chip:hover{ transform:translateY(-2px); border-color:var(--cyan); text-decoration:none; }
+.chip strong{ display:block; margin-top:.3rem; color:var(--serigrafia); }
+.chip small{ display:block; color:var(--tenue); }
+.chip small.warn{ color:var(--rojo); margin-top:.2rem; }
+.bread{ font-family:var(--mono); }
+.bread .tenue{ color:var(--tenue); }
 
 /* ---- Formularios ---- */
 .form fieldset{ border:1px solid var(--borde); border-radius:8px; margin:0 0 1rem; padding:1rem 1.2rem; }
