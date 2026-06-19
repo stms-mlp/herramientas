@@ -120,7 +120,12 @@ componente tiene sus características.
   (Secretaría/Dirección/Departamento/División), `codigo_padre`, `abreviatura`,
   `ubicacion`, `activa`. **Versionable** (las áreas se crean, cambian y
   desaparecen → §6 y §7).
-- **TipoEquipo** — `codigo` (2 letras EN), `nombre_es`, `lleva_hostname`.
+- **TipoEquipo** — `codigo` (2 letras EN), `nombre_es`, `lleva_hostname`, **+
+  define su ficha de atributos específicos (§5.5).**
+- **AtributoTipo** — definición de un campo propio de un tipo: `tipo_id`,
+  `nombre` (ej. "Cantidad de cámaras"), `tipo_dato` (texto/número/booleano/
+  fecha/lista), `obligatorio`, `sensible` (ver §5.4), `orden`.
+- **ValorAtributo** — valor de un `AtributoTipo` para un `Equipo` concreto.
 - **Estado** — En uso / En depósito / En reparación / De baja. (Auxiliar.)
 - **Equipo** — `id_patrimonial` (texto libre, externo, estable), `hostname`,
   `tipo_id`, `area_actual_id`, `estado_id`, `marca`, `modelo`, `n_serie`,
@@ -183,6 +188,32 @@ observaciones generales y **no** incluida en el extracto que se entrega al área
 > (etiquetas auxiliares) para poder **filtrar** equipos por rol (p. ej. listar
 > todos los que tienen VPN con organismos nacionales).
 
+### 5.5 Atributos específicos por tipo de equipo
+
+Cada tipo de equipo se **modela por separado**: además de los campos comunes
+(marca, modelo, n/s, IP, área, estado…), cada tipo define su propia **ficha de
+atributos** mediante las entidades `AtributoTipo` + `ValorAtributo`. Así se
+agregan/quitan campos por tipo **desde la interfaz**, sin tocar el esquema de la
+base ni el código.
+
+Ejemplos de ficha por tipo:
+
+- **DVR**: usuario y **clave** (sensible, §5.4), cantidad de cámaras,
+  almacenamiento (capacidad/discos), IP, marca/modelo de cámaras, días de
+  grabación.
+- **Impresora**: tecnología (láser/inyección), color/monocromática,
+  conectividad (USB/red/wifi), dúplex, insumos compatibles (§Insumo de
+  impresora), contador de páginas.
+- **Notebook**: pantalla, batería, MAC wifi, etc.
+- **Switch**: cantidad de puertos, administrable, PoE.
+- **UPS / Estabilizador**: VA/potencia, cantidad de tomas, autonomía.
+
+> Los **componentes internos** (CPU, RAM, discos, GPU…) se modelan aparte como
+> `Componente` (§5.1) y se pueden importar de CPU-Z/HWMonitor. Los
+> `AtributoTipo` cubren las características del **aparato como un todo** propias
+> de su tipo. Atributos marcados como **sensibles** (ej. clave de DVR) siguen las
+> reglas de §5.4 y §9.
+
 ### 5.2 Importación de características (CPU-Z / HWMonitor)
 
 - El sistema **recibe y procesa** un reporte de **CPU-Z** (`.txt`/`.html`) o
@@ -210,7 +241,8 @@ observaciones generales y **no** incluida en el extracto que se entrega al área
 ## 7. Tablas auxiliares (editables desde la interfaz)
 
 - **Áreas / Reparticiones** (ABM; reflejan cambios del organigrama).
-- **Tipos de equipo** (código, nombre, flag hostname).
+- **Tipos de equipo** (código, nombre, flag hostname) **y su ficha de atributos
+  específicos** (§5.5: alta/baja de campos por tipo).
 - **Estados**.
 - **Servicios de acceso remoto** (Anydesk, VNC, RDP…).
 - **Tipos de componente**.
