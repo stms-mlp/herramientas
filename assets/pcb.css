@@ -1,0 +1,182 @@
+/* Nominator — Tema "placa de circuito impreso" (PCB).
+   Verde placa, pistas de cobre, pads dorados, serigrafía blanca. */
+
+:root{
+  --pcb:        #0b3d2e;   /* verde placa base */
+  --pcb-2:      #0e4a37;   /* verde claro */
+  --pcb-dark:   #07291f;
+  --cobre:      #b87333;   /* pistas */
+  --cobre-2:    #c98a4b;
+  --oro:        #d4af37;   /* pads / acentos */
+  --oro-2:      #f0d265;
+  --serigrafia: #eaf3ee;   /* texto principal */
+  --tenue:      #8fb3a4;
+  --cyan:       #3fe0c8;   /* leds / links */
+  --rojo:       #ff6b6b;
+  --borde:      rgba(212,175,55,.30);
+  --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --sans: "Segoe UI", system-ui, Roboto, sans-serif;
+}
+
+*{ box-sizing:border-box; }
+
+body.pcb{
+  margin:0; color:var(--serigrafia); font-family:var(--sans);
+  background-color:var(--pcb);
+  /* "pistas" de cobre como patrón de fondo */
+  background-image:
+    linear-gradient(90deg, transparent 0 38px, rgba(184,115,51,.06) 38px 40px),
+    linear-gradient(0deg,  transparent 0 38px, rgba(184,115,51,.06) 38px 40px),
+    radial-gradient(circle at 20px 20px, rgba(212,175,55,.10) 0 2px, transparent 3px);
+  background-size:40px 40px, 40px 40px, 40px 40px;
+}
+
+a{ color:var(--cyan); text-decoration:none; }
+a:hover{ text-decoration:underline; }
+code,.mono{ font-family:var(--mono); }
+
+/* ---- Barra superior ---- */
+.barra{
+  display:flex; align-items:center; justify-content:space-between; gap:1rem;
+  padding:.6rem 1.2rem; background:linear-gradient(180deg,var(--pcb-2),var(--pcb-dark));
+  border-bottom:2px solid var(--cobre); box-shadow:0 2px 0 rgba(212,175,55,.25);
+}
+.marca{ display:flex; align-items:center; gap:.7rem; }
+.escudo{ height:42px; }
+.logo{
+  font-family:var(--mono); font-weight:700; letter-spacing:.22em; font-size:1.15rem;
+  color:var(--oro); text-shadow:0 0 6px rgba(212,175,55,.4);
+}
+.marca small{ display:block; color:var(--tenue); font-size:.72rem; }
+
+.menu{ display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
+.menu a{ color:var(--serigrafia); }
+.menu a:hover{ color:var(--oro-2); text-decoration:none; }
+.menu .cta{
+  border:1px solid var(--oro); color:var(--oro); padding:.25rem .6rem; border-radius:4px;
+}
+.menu .usr{ color:var(--tenue); font-size:.8rem; font-family:var(--mono); }
+.menu .salir{ color:var(--rojo); }
+
+/* ---- Cuerpo "placa" ---- */
+.placa{
+  max-width:1100px; margin:1.4rem auto; padding:1.4rem 1.6rem;
+  background:linear-gradient(180deg, rgba(14,74,55,.92), rgba(11,61,46,.92));
+  border:1px solid var(--borde); border-radius:10px;
+  box-shadow:0 0 0 3px var(--pcb-dark), 0 10px 30px rgba(0,0,0,.4);
+  position:relative;
+}
+/* "tornillos" de montaje en las esquinas */
+.placa::before,.placa::after{
+  content:""; position:absolute; width:12px; height:12px; border-radius:50%;
+  background:radial-gradient(circle at 35% 35%, var(--oro-2), var(--cobre) 70%);
+  box-shadow:0 0 0 2px var(--pcb-dark);
+}
+.placa::before{ top:10px; left:10px; }
+.placa::after{ bottom:10px; right:10px; }
+
+.titulo{
+  font-family:var(--mono); color:var(--oro-2); margin:.2rem 0 1rem;
+  border-bottom:1px dashed var(--borde); padding-bottom:.5rem; letter-spacing:.05em;
+}
+h2{ font-family:var(--mono); color:var(--cyan); margin-top:1.6rem; font-size:1.05rem; }
+
+/* ---- Tablas ---- */
+.tabla{ width:100%; border-collapse:collapse; margin-top:.6rem; font-size:.9rem; }
+.tabla th,.tabla td{ padding:.45rem .6rem; border-bottom:1px solid rgba(143,179,164,.18); text-align:left; }
+.tabla th{ color:var(--oro); font-weight:600; border-bottom:1px solid var(--borde); }
+.tabla tr:hover td{ background:rgba(63,224,200,.06); }
+.tabla .num,.tabla .token{ text-align:left; }
+.fila-alerta td{ background:rgba(255,107,107,.10); }
+
+.tag{ font-size:.72rem; padding:.1rem .4rem; border-radius:3px; }
+.tag.pers{ background:rgba(255,107,107,.2); color:var(--rojo); border:1px solid var(--rojo); }
+
+/* ---- Chips del tablero ---- */
+.grid-stats{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1rem; }
+.chip{
+  background:linear-gradient(160deg,#11251d,#0a1c16); border:1px solid var(--borde);
+  border-radius:8px; padding:1rem; color:var(--serigrafia); position:relative;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.3);
+}
+.chip .n{ display:block; font-family:var(--mono); font-size:2rem; color:var(--oro-2); }
+.chip.alerta{ border-color:var(--rojo); }
+.chip.alerta .n{ color:var(--rojo); }
+
+/* ---- Formularios ---- */
+.form fieldset{ border:1px solid var(--borde); border-radius:8px; margin:0 0 1rem; padding:1rem 1.2rem; }
+.form legend{ color:var(--oro); font-family:var(--mono); padding:0 .4rem; }
+.cols{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:.8rem; }
+label{ display:block; color:var(--tenue); font-size:.82rem; margin-bottom:.3rem; }
+input,select,textarea{
+  width:100%; margin-top:.2rem; padding:.45rem .55rem; background:var(--pcb-dark);
+  color:var(--serigrafia); border:1px solid var(--borde); border-radius:5px; font-family:var(--sans);
+}
+input:focus,select:focus,textarea:focus{ outline:none; border-color:var(--cyan); box-shadow:0 0 0 2px rgba(63,224,200,.25); }
+
+button,.btn,.btn-sec{
+  font-family:var(--mono); cursor:pointer; padding:.5rem .9rem; border-radius:6px;
+  border:1px solid var(--oro); background:linear-gradient(180deg,var(--oro),var(--cobre));
+  color:#1a1208; font-weight:700; letter-spacing:.04em; display:inline-block;
+}
+.btn-sec{ background:transparent; color:var(--cyan); border-color:var(--cyan); }
+button:hover,.btn:hover{ filter:brightness(1.08); text-decoration:none; }
+
+.acciones,.acciones-top{ display:flex; gap:.8rem; margin:1rem 0; align-items:center; }
+.filtros{ display:flex; gap:1rem; align-items:flex-end; margin-bottom:1rem; flex-wrap:wrap; }
+
+/* Preview de hostname */
+.preview{ margin-top:.8rem; padding:.7rem .9rem; background:var(--pcb-dark); border:1px dashed var(--cobre); border-radius:6px; }
+.preview .lbl{ color:var(--tenue); }
+.preview .host{ font-family:var(--mono); font-size:1.2rem; color:var(--oro-2); letter-spacing:.05em; }
+.aviso{ color:var(--rojo); font-size:.82rem; margin-top:.3rem; }
+
+/* Ficha de equipo */
+.ficha{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:.6rem; margin-top:.6rem; }
+.dato{ background:var(--pcb-dark); border:1px solid var(--borde); border-radius:6px; padding:.5rem .7rem; }
+.dato span{ display:block; color:var(--tenue); font-size:.72rem; }
+.dato b{ color:var(--serigrafia); }
+.nota-box{ background:var(--pcb-dark); border-left:3px solid var(--cyan); padding:.7rem .9rem; border-radius:4px; }
+
+/* Mensajes flash */
+.flash{ padding:.6rem .9rem; border-radius:6px; margin:.6rem 0; font-size:.9rem; }
+.flash.ok{ background:rgba(63,224,200,.12); border:1px solid var(--cyan); }
+.flash.error{ background:rgba(255,107,107,.12); border:1px solid var(--rojo); color:#ffd8d8; }
+.vacio,.ayuda,.nota{ color:var(--tenue); }
+
+.pie{ text-align:center; color:var(--tenue); font-size:.78rem; padding:1.2rem; font-family:var(--mono); }
+
+/* ---- Login ---- */
+.login-body{ display:grid; place-items:center; min-height:100vh; }
+.login-card{
+  width:340px; padding:2rem; text-align:center; border-radius:12px;
+  background:linear-gradient(180deg, rgba(14,74,55,.96), rgba(7,41,31,.96));
+  border:1px solid var(--borde); box-shadow:0 0 0 3px var(--pcb-dark), 0 12px 40px rgba(0,0,0,.5);
+}
+.escudo-login{ height:64px; margin-bottom:.5rem; }
+.login-card .sub{ color:var(--tenue); font-size:.8rem; margin-top:0; }
+.login-card form{ margin-top:1rem; text-align:left; }
+.login-card button{ width:100%; margin-top:.8rem; }
+
+/* ===========================================================
+   REPORTES (estética sobria, lista para imprimir / PDF)
+   =========================================================== */
+body.reporte{ margin:0; background:#fff; color:#111; font-family:var(--sans); padding:24px; }
+.rep-cab{ display:flex; align-items:center; gap:16px; border-bottom:3px solid var(--pcb); padding-bottom:10px; }
+.rep-escudo{ height:64px; }
+.rep-org{ display:flex; flex-direction:column; }
+.rep-org strong{ font-size:1.05rem; }
+.rep-org span{ color:#555; font-size:.85rem; }
+.rep-tit{ margin-left:auto; font-weight:700; color:var(--pcb); font-size:1.1rem; }
+.rep-cuerpo{ margin-top:18px; }
+.rep-sub{ color:var(--pcb); border-bottom:1px solid #ccc; padding-bottom:4px; }
+.rep-tabla{ border-collapse:collapse; width:100%; margin-top:8px; font-size:.88rem; }
+.rep-tabla th,.rep-tabla td{ border:1px solid #bbb; padding:5px 8px; text-align:left; }
+.rep-tabla th{ background:#eef3f1; color:#163; }
+.rep-tabla.full th{ background:var(--pcb); color:#fff; }
+.rep-meta,.rep-nota{ font-size:.85rem; color:#444; }
+.rep-pie{ display:flex; justify-content:space-between; margin-top:24px; padding-top:8px;
+  border-top:1px solid #ccc; color:#666; font-size:.78rem; }
+.rep-acciones{ margin-top:16px; display:flex; gap:12px; }
+.rep-acciones button,.rep-acciones a{ padding:6px 12px; }
+@media print{ .no-print{ display:none !important; } body.reporte{ padding:0; } }
