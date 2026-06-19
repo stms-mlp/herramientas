@@ -13,7 +13,7 @@
   <div class="dato"><span>Tipo</span><b><?= h($eq['tnom']) ?></b></div>
   <div class="dato"><span>Repartición</span><b><?= h($eq['acod']) ?> — <?= h($eq['adesc']) ?></b></div>
   <div class="dato"><span>Estado</span><b><?= h($eq['enom']) ?></b></div>
-  <div class="dato"><span>Marca / Modelo</span><b><?= h(trim(($eq['marca'] ?? '').' '.($eq['modelo'] ?? ''))) ?></b></div>
+  <div class="dato"><span>Marca / Modelo</span><b><?= h(nombre_equipo($eq)) ?></b></div>
   <div class="dato"><span>N° de serie</span><b><?= h($eq['n_serie'] ?: '—') ?></b></div>
   <div class="dato"><span>IP</span><b class="mono"><?= h($eq['ip'] ?: '—') ?></b></div>
   <div class="dato"><span>Titularidad</span><b><?= h($eq['titularidad']) ?></b></div>

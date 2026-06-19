@@ -20,7 +20,7 @@
           <td><?= $i + 1 ?></td>
           <td class="mono"><?= h($e['hostname'] ?: '—') ?></td>
           <td><?= h($e['tnom']) ?></td>
-          <td><?= h(trim(($e['marca'] ?? '').' '.($e['modelo'] ?? ''))) ?></td>
+          <td><?= h(nombre_equipo($e)) ?></td>
           <td><?= h($e['n_serie'] ?: '—') ?></td>
           <td><?= h($e['id_patrimonial'] ?: '—') ?></td>
           <td class="mono"><?= h($e['ip'] ?: '—') ?></td>

@@ -8,7 +8,7 @@
     <tr><th>Tipo</th><td><?= h($eq['tnom']) ?></td>
         <th>Estado</th><td><?= h($eq['enom']) ?></td></tr>
     <tr><th>Repartición</th><td colspan="3"><?= h($eq['acod']) ?> — <?= h($eq['adesc']) ?></td></tr>
-    <tr><th>Marca / Modelo</th><td><?= h(trim(($eq['marca'] ?? '').' '.($eq['modelo'] ?? ''))) ?></td>
+    <tr><th>Marca / Modelo</th><td><?= h(nombre_equipo($eq)) ?></td>
         <th>N° de serie</th><td><?= h($eq['n_serie'] ?: '—') ?></td></tr>
     <tr><th>IP</th><td class="mono"><?= h($eq['ip'] ?: '—') ?></td>
         <th>Titularidad</th><td><?= h($eq['titularidad']) ?></td></tr>
