@@ -63,8 +63,29 @@ switch ($r) {
     // ---------- Áreas ----------
     case 'areas':
         requiere_login();
-        $areas = db()->query('SELECT * FROM areas ORDER BY codigo')->fetchAll();
-        pagina('Reparticiones', vista('areas_list', ['areas' => $areas, 'flash' => flash()]));
+        $todas = db()->query('SELECT * FROM areas ORDER BY codigo')->fetchAll();
+        // Agrupar por secretaría = raíz del código (último segmento tras '#')
+        $titulos = [];
+        foreach ($todas as $a) {
+            $titulos[$a['codigo']] = $a['descripcion'];
+        }
+        $grupos = [];
+        foreach ($todas as $a) {
+            $partes = explode('#', $a['codigo']);
+            $raiz = trim((string)end($partes));
+            if (!isset($grupos[$raiz])) {
+                $grupos[$raiz] = ['codigo' => $raiz, 'titulo' => $titulos[$raiz] ?? $raiz,
+                                  'areas' => [], 'duplic' => 0];
+            }
+            $grupos[$raiz]['areas'][] = $a;
+            if ($a['duplicado']) {
+                $grupos[$raiz]['duplic']++;
+            }
+        }
+        // INT (Intendencia) primero; luego alfabético por raíz
+        uksort($grupos, fn($x, $y) => $x === 'INT' ? -1 : ($y === 'INT' ? 1 : strcmp($x, $y)));
+        $sec = trim((string)($_GET['sec'] ?? ''));
+        pagina('Reparticiones', vista('areas_list', ['grupos' => $grupos, 'sec' => $sec, 'flash' => flash()]));
         break;
 
     case 'areas.nueva':
