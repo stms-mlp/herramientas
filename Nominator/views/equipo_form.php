@@ -53,9 +53,11 @@ $sel = fn(string $k, $v) => (string)$val($k) === (string)$v ? 'selected' : '';
 
   <fieldset>
     <legend>Datos técnicos</legend>
+    <p class="ayuda">Marca y modelo son opcionales: para equipos <strong>armados/genéricos</strong>
+       dejalos vacíos (se mostrará «Genérico (armado)») y cargá el detalle en Componentes.</p>
     <div class="cols">
-      <label>Marca <input name="marca" value="<?= h($val('marca')) ?>"></label>
-      <label>Modelo <input name="modelo" value="<?= h($val('modelo')) ?>"></label>
+      <label>Marca <input name="marca" value="<?= h($val('marca')) ?>" placeholder="(opcional)"></label>
+      <label>Modelo <input name="modelo" value="<?= h($val('modelo')) ?>" placeholder="(opcional)"></label>
       <label>N° de serie <input name="n_serie" value="<?= h($val('n_serie')) ?>"></label>
       <label>N° de parte <input name="n_parte" value="<?= h($val('n_parte')) ?>"></label>
       <label>IP <input name="ip" value="<?= h($val('ip')) ?>" placeholder="192.168.0.x"></label>

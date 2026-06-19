@@ -30,7 +30,7 @@
       <td class="mono"><a href="?r=equipos.ver&id=<?= (int)$e['id'] ?>">
         <?= h($e['hostname'] ?: '—') ?></a></td>
       <td><?= h($e['tnom']) ?></td>
-      <td><?= h(trim(($e['marca'] ?? '') . ' ' . ($e['modelo'] ?? ''))) ?></td>
+      <td class="<?= nombre_equipo($e) === 'Genérico (armado)' ? 'tenue' : '' ?>"><?= h(nombre_equipo($e)) ?></td>
       <td><?= h($e['acod']) ?></td>
       <td class="mono"><?= h($e['ip']) ?></td>
       <td><?= h($e['enom']) ?></td>

@@ -55,6 +55,17 @@ function csrf_check(): void
     }
 }
 
+/**
+ * Nombre descriptivo del equipo a partir de marca/modelo.
+ * Para equipos genéricos/armados (sin marca ni modelo) devuelve un rótulo
+ * claro; el detalle real se ve en los componentes.
+ */
+function nombre_equipo(array $e): string
+{
+    $mm = trim(((string)($e['marca'] ?? '')) . ' ' . ((string)($e['modelo'] ?? '')));
+    return $mm !== '' ? $mm : 'Genérico (armado)';
+}
+
 /** Enmascara un valor sensible (para rol lectura). */
 function enmascarar(?string $v): string
 {
