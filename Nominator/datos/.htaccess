@@ -1,0 +1,6 @@
+# Bloquear acceso web a la base de datos y archivos de datos
+Require all denied
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
