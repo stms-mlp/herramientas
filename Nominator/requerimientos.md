@@ -324,8 +324,15 @@ Ejemplos de ficha por tipo:
 
 - **Nominator NO guarda contraseñas de equipos/servicios.** El secreto se
   gestiona en **KeePass** (`.kdbx`).
-- El sistema guarda sólo una **referencia a la entrada de KeePass** (título o
-  ruta) y opcionalmente el **nombre de usuario**.
+- El sistema guarda sólo una **referencia a la entrada de KeePass**: de
+  preferencia el **UUID de la entrada** (estable aunque se renombre o se mueva de
+  grupo), y como ayuda visual el **título/ruta** (ej. `Routers/SGYA-DA-RT001`).
+  Opcionalmente el **nombre de usuario**. **Nunca la clave.**
+- **No se integra ninguna librería de KeePass** (KeePassPHP u otra): hacerlo
+  exigiría subir el `.kdbx` y la clave maestra al servidor, reintroduciendo el
+  riesgo que se quiere evitar, además de sumar dependencias y soporte de Argon2
+  (KDBX4) problemático en hosting compartido. El técnico abre su KeePass y busca
+  la entrada por ese UUID/título.
 - Beneficio: menos riesgo en hosting compartido y **no hace falta** un esquema
   fino de roles para proteger secretos, porque los secretos no están en la app.
 
