@@ -149,6 +149,11 @@ componente tiene sus características.
   como en el sistema viejo): `equipo_id` (impresora), `tipo` (tóner / unidad de
   imagen / chip / cartucho), `modelo`, `nota`/`stock`. Una impresora declara qué
   insumos usa.
+- **RedWifi / AccesoRed** — para **routers y redes WiFi** (`equipo_id`):
+  `ssid`, `usuario`, `clave`, `banda` (2.4/5GHz), `oculta`, `nota`. A diferencia
+  de las claves de §9.1, **estas se guardan en el sistema** porque el técnico las
+  consulta seguido; se muestran **en claro al admin/técnico** y **enmascaradas
+  (`••••••`) al rol lectura** (§9.1.1). Un router puede tener varios SSIDs.
 - **Usuario** — `usuario`, `hash_clave`, `rol` (admin / técnico / lectura),
   `activo`. Para el login del sistema (§9).
 - **Auditoria** — `fecha`, `usuario`, `entidad`, `entidad_id`, `accion`
@@ -323,6 +328,17 @@ Ejemplos de ficha por tipo:
   ruta) y opcionalmente el **nombre de usuario**.
 - Beneficio: menos riesgo en hosting compartido y **no hace falta** un esquema
   fino de roles para proteger secretos, porque los secretos no están en la app.
+
+### 9.1.1 Excepción: credenciales de red (routers / WiFi)
+
+- Para **routers y redes WiFi** sí se guardan en el sistema el **usuario, los
+  SSIDs y las claves** (entidad `RedWifi`), porque el técnico las necesita a
+  mano con frecuencia.
+- **Visibilidad por rol:**
+  - **Admin / Técnico**: ven las claves **en claro** (con botón "mostrar").
+  - **Lectura**: las ve **enmascaradas** (`••••••`); no puede revelarlas ni
+    exportarlas.
+- No aparecen en extractos ni fichas que salen del área de sistemas.
 
 ### 9.2 Auditoría
 
