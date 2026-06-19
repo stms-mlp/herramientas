@@ -21,6 +21,15 @@
   <div class="dato"><span>Responsable</span><b><?= h($eq['responsable'] ?: '—') ?></b></div>
 </div>
 
+<?php if (!empty($atributos)): ?>
+  <h2>Ficha del tipo (<?= h($eq['tnom']) ?>)</h2>
+  <div class="ficha">
+    <?php foreach ($atributos as $a): ?>
+      <div class="dato"><span><?= h($a['nombre']) ?></span><b><?= h($a['valor']) ?></b></div>
+    <?php endforeach; ?>
+  </div>
+<?php endif; ?>
+
 <h2>Componentes</h2>
 <?php if (!$componentes): ?>
   <p class="vacio">Sin componentes cargados. (Importación CPU-Z/HWMonitor: fase siguiente.)</p>

@@ -15,6 +15,7 @@ require_once __DIR__ . '/lib/db.php';
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/helpers.php';
 require_once __DIR__ . '/lib/hostname.php';
+require_once __DIR__ . '/lib/inventario.php';
 require_once __DIR__ . '/lib/view.php';
 
 db(); // inicializa esquema / semillas en el primer acceso
@@ -189,7 +190,45 @@ switch ($r) {
         pagina($eq ? 'Editar equipo' : 'Nuevo equipo', vista('equipo_form', [
             'eq' => $eq, 'old' => $old, 'areas' => $areas, 'tipos' => $tipos,
             'estados' => $estados, 'flash' => flash(),
+            'componentes' => $eq ? componentes_de((int)$eq['id']) : [],
+            'valores'     => $eq ? valores_de((int)$eq['id']) : [],
+            'atrMapa'     => atributos_mapa(),
+            'tiposComp'   => $db->query('SELECT nombre FROM tipos_componente WHERE activo=1 ORDER BY nombre')->fetchAll(PDO::FETCH_COLUMN),
+            'catMarca'    => cat_union(['marca', 'comp_marca']),
+            'catModelo'   => cat_union(['modelo', 'comp_modelo']),
         ]));
+        break;
+
+    case 'equipos.lote': // carga por lote: un área, varios equipos
+        requiere_rol(ROL_TECNICO);
+        $db = db();
+        pagina('Carga por lote', vista('equipo_lote', [
+            'areas'   => $db->query('SELECT id, codigo, descripcion FROM areas WHERE activa=1 ORDER BY codigo')->fetchAll(),
+            'tipos'   => $db->query('SELECT * FROM tipos_equipo WHERE activo=1 ORDER BY nombre_es')->fetchAll(),
+            'estados' => $db->query('SELECT * FROM estados WHERE activo=1 ORDER BY id')->fetchAll(),
+            'atrMapa' => atributos_mapa(),
+            'tiposComp' => $db->query('SELECT nombre FROM tipos_componente WHERE activo=1 ORDER BY nombre')->fetchAll(PDO::FETCH_COLUMN),
+            'catMarca'  => cat_union(['marca', 'comp_marca']),
+            'catModelo' => cat_union(['modelo', 'comp_modelo']),
+            'flash' => flash(),
+        ]));
+        break;
+
+    case 'componentes.analizar': // AJAX: parseo de reporte CPU-Z/HWMonitor
+        requiere_rol(ROL_TECNICO);
+        header('Content-Type: application/json');
+        require_once __DIR__ . '/lib/cpuz.php';
+        $out = ['componentes' => [], 'avisos' => []];
+        if (!empty($_FILES['reporte']['tmp_name']) && is_uploaded_file($_FILES['reporte']['tmp_name'])) {
+            if ((int)$_FILES['reporte']['size'] > 2_000_000) {
+                $out['avisos'][] = 'Archivo demasiado grande (máx. 2 MB).';
+            } else {
+                $out = cpuz_parsear((string)file_get_contents($_FILES['reporte']['tmp_name']));
+            }
+        } else {
+            $out['avisos'][] = 'No se recibió ningún archivo.';
+        }
+        echo json_encode($out, JSON_UNESCAPED_UNICODE);
         break;
 
     case 'equipos.preview': // AJAX: previsualización del hostname
@@ -279,7 +318,74 @@ switch ($r) {
             auditar('equipo', $id, 'alta', $hostname ?? ('patrimonial ' . ($campos['id_patrimonial'] ?? '')));
             flash('Equipo creado' . ($hostname ? " como «{$hostname}»." : '.'));
         }
+        // Catálogo, componentes y atributos dinámicos
+        cat_add('marca', $campos['marca']);
+        cat_add('modelo', $campos['modelo']);
+        guardar_componentes($db, $id, $_POST);
+        guardar_atributos($db, $id, $tipoId, $_POST['attr'] ?? []);
         redir('equipos.ver&id=' . $id);
+        break;
+
+    case 'equipos.lote_guardar':
+        requiere_rol(ROL_TECNICO);
+        csrf_check();
+        $db = db();
+        $areaId = (int)($_POST['area_id'] ?? 0);
+        $area = $areaId ? $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch() : null;
+        if (!$area) {
+            flash('Elegí un área para la carga por lote.', 'error');
+            redir('equipos.lote');
+        }
+        $filas = $_POST['eq'] ?? [];
+        $creados = 0;
+        $errores = [];
+        foreach ((array)$filas as $idx => $f) {
+            $tipoId = (int)($f['tipo_id'] ?? 0);
+            if (!$tipoId) {
+                continue; // fila sin tipo: se ignora
+            }
+            $tipo = $db->query('SELECT * FROM tipos_equipo WHERE id=' . $tipoId)->fetch();
+            if (!$tipo) {
+                continue;
+            }
+            $res = nm_resolver_hostname($db, $tipo, $area, $f['hostname'] ?? '', null);
+            if ($res['errores']) {
+                $errores[] = 'Equipo #' . ($idx + 1) . ': ' . implode(' ', $res['errores']);
+                continue;
+            }
+            $campos = [
+                'id_patrimonial' => trim($f['id_patrimonial'] ?? '') ?: null,
+                'hostname'    => $res['hostname'],
+                'tipo_id'     => $tipoId,
+                'area_id'     => $areaId,
+                'estado_id'   => (int)($f['estado_id'] ?? 0) ?: null,
+                'correlativo' => $res['correlativo'],
+                'marca'       => trim($f['marca'] ?? ''),
+                'modelo'      => trim($f['modelo'] ?? ''),
+                'n_serie'     => trim($f['n_serie'] ?? ''),
+                'n_parte'     => trim($f['n_parte'] ?? ''),
+                'ip'          => trim($f['ip'] ?? ''),
+                'titularidad' => $f['titularidad'] ?? 'Municipal',
+                'tenencia'    => $f['tenencia'] ?? 'En sede',
+                'tenedor'     => trim($f['tenedor'] ?? ''),
+                'responsable' => trim($f['responsable'] ?? ''),
+                'observaciones' => trim($f['observaciones'] ?? ''),
+            ];
+            $cols = implode(',', array_keys($campos));
+            $ph = implode(',', array_fill(0, count($campos), '?'));
+            $db->prepare("INSERT INTO equipos ($cols) VALUES ($ph)")->execute(array_values($campos));
+            $id = (int)$db->lastInsertId();
+            cat_add('marca', $campos['marca']);
+            cat_add('modelo', $campos['modelo']);
+            guardar_componentes($db, $id, $f);
+            guardar_atributos($db, $id, $tipoId, $f['attr'] ?? []);
+            auditar('equipo', $id, 'alta (lote)', (string)$campos['hostname']);
+            $creados++;
+        }
+        $msg = ($creados ? "$creados equipo(s) creado(s) en {$area['descripcion']}. " : '')
+             . ($errores ? 'No se cargaron: ' . implode(' | ', $errores) : '');
+        flash($msg ?: 'No se cargó ningún equipo.', $errores ? 'error' : 'ok');
+        redir('equipos&area=' . $areaId);
         break;
 
     case 'equipos.ver':
@@ -301,10 +407,9 @@ switch ($r) {
             pagina('No encontrado', '<p>Equipo inexistente.</p>');
             break;
         }
-        $comp = $db->prepare('SELECT * FROM componentes WHERE equipo_id=?');
-        $comp->execute([$id]);
         pagina('Equipo ' . ($eq['hostname'] ?? $eq['id']), vista('equipo_show', [
-            'eq' => $eq, 'componentes' => $comp->fetchAll(), 'flash' => flash(),
+            'eq' => $eq, 'componentes' => componentes_de($id),
+            'atributos' => valores_legibles($id), 'flash' => flash(),
         ]));
         break;
 
@@ -322,9 +427,9 @@ switch ($r) {
         $st->execute([$id]);
         $eq = $st->fetch();
         if (!$eq) { http_response_code(404); exit('Equipo inexistente.'); }
-        $comp = $db->prepare('SELECT * FROM componentes WHERE equipo_id=?');
-        $comp->execute([$id]);
-        reporte('Ficha de hardware', vista('rep_ficha', ['eq' => $eq, 'componentes' => $comp->fetchAll()]));
+        reporte('Ficha de hardware', vista('rep_ficha', [
+            'eq' => $eq, 'componentes' => componentes_de($id), 'atributos' => valores_legibles($id),
+        ]));
         break;
 
     case 'reporte.area': // extracto para declaración de inventario
