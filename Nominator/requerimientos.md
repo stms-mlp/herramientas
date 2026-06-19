@@ -133,7 +133,8 @@ componente tiene sus características.
   `responsable`, `compra_fecha`/`compra_factura`, `garantia`, **+ titularidad y
   tenencia (§5.3):** `titularidad` (Municipal / Personal), `tenencia`/`ubicacion`
   (En sede / Domicilio de empleado–teletrabajo), `tenedor` (persona que lo tiene),
-  **+ notas técnicas/operativas (§5.4).**
+  **+ notas técnicas/operativas (§5.4)**, **+ baja (§9.3):** `baja_fecha`,
+  `baja_motivo`, `baja_destino` (descarte / donación / robo / reemplazo).
 - **Componente** — pertenece a un `Equipo`. `tipo_componente`
   (CPU / RAM / Disco / GPU / Motherboard / etc.) con atributos:
   **marca, modelo, n/s, velocidad, memoria, bus**. **Importable** desde reportes
@@ -148,6 +149,19 @@ componente tiene sus características.
   como en el sistema viejo): `equipo_id` (impresora), `tipo` (tóner / unidad de
   imagen / chip / cartucho), `modelo`, `nota`/`stock`. Una impresora declara qué
   insumos usa.
+- **Usuario** — `usuario`, `hash_clave`, `rol` (admin / técnico / lectura),
+  `activo`. Para el login del sistema (§9).
+- **Auditoria** — `fecha`, `usuario`, `entidad`, `entidad_id`, `accion`
+  (alta/modificación/baja), `detalle`. Registro de quién cambió qué (§9.2).
+- **Adjunto** — `equipo_id`, `tipo` (foto / factura / remito / acta de entrega /
+  otro), `archivo`, `descripcion`, `fecha` (§9.4).
+- **Reparacion** — `equipo_id`, `fecha`, `falla`, `diagnostico`, `solucion`,
+  `proveedor`, `costo`, `estado` (§9.6). Asociada al estado "En reparación".
+- **HistorialResponsable** — `equipo_id`, `responsable`, `desde`, `hasta`,
+  `motivo` (§9.5). El responsable puede cambiar sin que el equipo se mude.
+- **Software / Licencia** (opcional) — `equipo_id`, `producto` (SO, Office,
+  antivirus…), `clave/licencia` (referencia, no la clave en claro), `vencimiento`
+  (§9.7).
 
 > No se modela una "Red/IP" aparte: la IP es un campo del propio equipo.
 
@@ -174,9 +188,10 @@ Información que ayuda al técnico a trabajar sobre el equipo. Separada de las
 observaciones generales y **no** incluida en el extracto que se entrega al área
 (§8.1). Ejemplos:
 
-- **Credenciales de acceso** (usuario/clave del equipo o de servicios). ⚠️ Dato
-  **sensible**: visible sólo para usuarios autorizados (§9), nunca en extractos
-  ni fichas que salen del área de sistemas.
+- **Credenciales de acceso** (usuario/clave del equipo o de servicios).
+  ⚠️ **Nominator NO almacena contraseñas.** El secreto vive en **KeePass**; en el
+  sistema se guarda sólo una **referencia a la entrada de KeePass** (título/ruta
+  dentro del `.kdbx`) y, a lo sumo, el **usuario** (no la clave). Ver §9.1.
 - **Rol/función del equipo**: ej. "funciona como servidor de archivos",
   "controlador de dominio", "host de cámaras".
 - **Software específico** que corre o del que depende.
@@ -198,9 +213,9 @@ base ni el código.
 
 Ejemplos de ficha por tipo:
 
-- **DVR**: usuario y **clave** (sensible, §5.4), cantidad de cámaras,
-  almacenamiento (capacidad/discos), IP, marca/modelo de cámaras, días de
-  grabación.
+- **DVR**: usuario y **referencia a la clave en KeePass** (no la clave en sí,
+  §9.1), cantidad de cámaras, almacenamiento (capacidad/discos), IP,
+  marca/modelo de cámaras, días de grabación.
 - **Impresora**: tecnología (láser/inyección), color/monocromática,
   conectividad (USB/red/wifi), dúplex, insumos compatibles (§Insumo de
   impresora), contador de páginas.
@@ -211,8 +226,8 @@ Ejemplos de ficha por tipo:
 > Los **componentes internos** (CPU, RAM, discos, GPU…) se modelan aparte como
 > `Componente` (§5.1) y se pueden importar de CPU-Z/HWMonitor. Los
 > `AtributoTipo` cubren las características del **aparato como un todo** propias
-> de su tipo. Atributos marcados como **sensibles** (ej. clave de DVR) siguen las
-> reglas de §5.4 y §9.
+> de su tipo. Para secretos (ej. clave de DVR) se guarda la **referencia a
+> KeePass**, nunca la contraseña (§9.1).
 
 ### 5.2 Importación de características (CPU-Z / HWMonitor)
 
@@ -246,6 +261,7 @@ Ejemplos de ficha por tipo:
 - **Estados**.
 - **Servicios de acceso remoto** (Anydesk, VNC, RDP…).
 - **Tipos de componente**.
+- **Usuarios y roles** del sistema.
 
 ---
 
@@ -262,6 +278,12 @@ Ejemplos de ficha por tipo:
 - **Listado por repartición** (vista principal del inventario, agrupable por
   área) + filtros por tipo, estado e IP.
 - ABM de **tablas auxiliares**.
+- **Login con roles** (admin / técnico / lectura) y **auditoría** de cambios.
+- **Baja formal** de equipos (motivo/destino) e **historial de responsable**.
+- **Adjuntos** (fotos, factura/remito, acta de entrega).
+- **Reparaciones/mantenimiento** por equipo.
+- **Etiqueta imprimible con QR** por equipo.
+- **Backup** de la base y **exportación** de listados/extractos a CSV y PDF.
 
 ### 8.1 Resumen de hardware y extracto por repartición
 
@@ -282,11 +304,76 @@ Ejemplos de ficha por tipo:
 
 ---
 
-## 9. Usuarios y acceso
+## 9. Gestión, seguridad y trazabilidad
 
-- **Login requerido** para usar el sistema (no acceso libre).
-- Manejo simple de usuarios/sesión adecuado a hosting compartido (a definir
-  alcance de roles).
+### 9.0 Usuarios y roles
+
+- **Login requerido** (no acceso libre). Sesión simple, adecuada a hosting
+  compartido. Contraseñas de usuarios guardadas como **hash** (nunca en claro).
+- **Roles:**
+  - **Admin** — todo, incluida la gestión de usuarios y tablas auxiliares.
+  - **Técnico** — ABM de equipos, componentes, mudanzas, reparaciones, etc.
+  - **Lectura** — sólo consulta y generación de extractos.
+
+### 9.1 Credenciales de equipos (KeePass)
+
+- **Nominator NO guarda contraseñas de equipos/servicios.** El secreto se
+  gestiona en **KeePass** (`.kdbx`).
+- El sistema guarda sólo una **referencia a la entrada de KeePass** (título o
+  ruta) y opcionalmente el **nombre de usuario**.
+- Beneficio: menos riesgo en hosting compartido y **no hace falta** un esquema
+  fino de roles para proteger secretos, porque los secretos no están en la app.
+
+### 9.2 Auditoría
+
+- Registro de **quién hizo qué y cuándo**: altas, bajas y modificaciones de
+  equipos y datos clave (entidad `Auditoria`). Necesario para rendir cuentas en
+  un organismo público.
+
+### 9.3 Ciclo de vida / baja formal
+
+- Estados de vida del equipo, incluida la **baja** con `baja_fecha`,
+  `baja_motivo` y `baja_destino` (descarte / donación / robo / reemplazo).
+- Los equipos dados de baja salen de los listados activos y del extracto de
+  declaración, pero **se conservan** para historial.
+
+### 9.4 Adjuntos
+
+- Archivos por equipo: **fotos**, **factura/remito** de compra y, sobre todo,
+  **acta de entrega** firmada para equipos en teletrabajo o personales (deslinde
+  de responsabilidad).
+
+### 9.5 Historial de responsable
+
+- Además del historial de **mudanzas** (área), se registra el historial de
+  **responsable/tenedor** (un equipo cambia de manos sin mudarse de área).
+
+### 9.6 Reparaciones / mantenimiento
+
+- Registro de fallas, diagnóstico, solución, proveedor y costo, vinculado al
+  estado "En reparación".
+
+### 9.7 Software y licencias (opcional / fase 2)
+
+- Inventario básico de software relevante (SO, Office, antivirus) y vencimiento
+  de licencias. La clave/licencia se guarda como referencia, no en claro.
+
+### 9.8 Backup y exportación
+
+- **Backup de la base** (SQLite es el único punto de verdad): botón para
+  **descargar** el `.sqlite` y/o exportar a SQL.
+- **Exportación de listados** y del **extracto por repartición** a **CSV y PDF**.
+
+### 9.9 Etiquetas y QR
+
+- Generar una **etiqueta imprimible** por equipo (hostname + ID patrimonial +
+  **QR**) para pegar en el gabinete y escanearla luego.
+
+### 9.10 Validaciones de integridad
+
+- **N° de serie único** (avisa si se repite).
+- **Hostname único** global (§3.2).
+- **IP duplicada**: avisa si se repite en el mismo segmento.
 
 ---
 
@@ -297,7 +384,13 @@ Ejemplos de ficha por tipo:
    tipo `MLP-0042`).
 3. **CPU-Z/HWMonitor:** levantar marca, modelo, n/s, velocidad, memoria, bus.
 4. **Campos de gestión:** responsable, fecha/factura de compra, garantía.
-5. **Login:** requerido.
+5. **Login:** requerido, con roles admin / técnico / lectura.
+6. **Claves de equipos:** NO se guardan en Nominator; se referencia la entrada
+   de **KeePass** (a lo sumo se guarda el usuario).
+7. **Incluidos en alcance:** auditoría, baja formal, adjuntos (incl. acta de
+   entrega), historial de responsable, reparaciones, etiqueta QR, backup y
+   exportación CSV/PDF, validaciones de unicidad.
+8. **Fase 2 (anotado, no bloqueante):** inventario de software/licencias.
 
 ---
 
