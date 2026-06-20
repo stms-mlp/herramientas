@@ -23,6 +23,7 @@
     <a href="?r=equipos">Equipos</a>
     <a href="?r=areas">Reparticiones</a>
     <?php if (puede(ROL_TECNICO)): ?>
+      <a href="?r=reportes">Reportes</a>
       <a href="?r=equipos.nuevo" class="cta">+ Equipo</a>
       <a href="?r=equipos.lote" class="cta">+ Lote</a>
     <?php endif; ?>
