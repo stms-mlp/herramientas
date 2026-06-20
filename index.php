@@ -551,19 +551,42 @@ switch ($r) {
         ]));
         break;
 
+    case 'reporte.area_opciones': // elegir qué tipos incluir en el extracto
+        requiere_login();
+        $db = db();
+        $areaId = (int)($_GET['area'] ?? 0);
+        $area = $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch();
+        if (!$area) { http_response_code(404); pagina('No encontrado', '<p>Área inexistente.</p>'); break; }
+        $st = $db->prepare(
+            "SELECT t.id, t.nombre_es, COUNT(e.id) n
+             FROM tipos_equipo t
+             JOIN equipos e ON e.tipo_id=t.id AND e.area_id=? AND e.titularidad='Municipal'
+                            AND COALESCE(e.baja_fecha,'')=''
+             GROUP BY t.id ORDER BY t.nombre_es"
+        );
+        $st->execute([$areaId]);
+        pagina('Extracto de ' . $area['descripcion'],
+            vista('rep_area_opciones', ['area' => $area, 'tipos' => $st->fetchAll()]));
+        break;
+
     case 'reporte.area': // extracto para declaración de inventario
         requiere_login();
         $db = db();
         $areaId = (int)($_GET['area'] ?? 0);
         $area = $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch();
         if (!$area) { http_response_code(404); exit('Área inexistente.'); }
-        $st = $db->prepare(
-            "SELECT e.*, t.nombre_es tnom FROM equipos e JOIN tipos_equipo t ON t.id=e.tipo_id
-             WHERE e.area_id=? AND e.titularidad='Municipal'
-               AND COALESCE(e.baja_fecha,'')=''
-             ORDER BY t.nombre_es, e.correlativo"
-        );
-        $st->execute([$areaId]);
+        // Filtro opcional de tipos (configurable por reporte).
+        $tiposSel = array_values(array_filter(array_map('intval', (array)($_GET['tipos'] ?? []))));
+        $sql = "SELECT e.*, t.nombre_es tnom FROM equipos e JOIN tipos_equipo t ON t.id=e.tipo_id
+                WHERE e.area_id=? AND e.titularidad='Municipal' AND COALESCE(e.baja_fecha,'')=''";
+        $args = [$areaId];
+        if ($tiposSel) {
+            $sql .= ' AND e.tipo_id IN (' . implode(',', array_fill(0, count($tiposSel), '?')) . ')';
+            $args = array_merge($args, $tiposSel);
+        }
+        $sql .= ' ORDER BY t.nombre_es, e.correlativo';
+        $st = $db->prepare($sql);
+        $st->execute($args);
         reporte('Extracto de inventario', vista('rep_area', ['area' => $area, 'equipos' => $st->fetchAll()]));
         break;
 
