@@ -12,7 +12,7 @@
     </select>
   </label>
   <?php if ($filtroArea): ?>
-    <a class="btn" href="?r=reporte.area&area=<?= $filtroArea ?>" target="_blank">📄 Extracto del área</a>
+    <a class="btn" href="?r=reporte.area_opciones&area=<?= $filtroArea ?>">📄 Extracto del área</a>
   <?php endif; ?>
 </form>
 
