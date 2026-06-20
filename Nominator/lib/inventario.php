@@ -38,6 +38,46 @@ function componentes_de(int $equipoId): array
     return $st->fetchAll();
 }
 
+/** Tipo corto de disco a partir del bus ("Fixed, SSD NVMe" -> "NVMe"). */
+function _tipo_disco(string $bus): string
+{
+    if (stripos($bus, 'NVMe') !== false) { return 'NVMe'; }
+    if (stripos($bus, 'SSD') !== false)  { return 'SSD'; }
+    if (stripos($bus, 'HDD') !== false || stripos($bus, 'ATA') !== false) { return 'HDD'; }
+    return 'Disco';
+}
+
+/**
+ * Resumen de hardware en una línea, con las partes INDIVIDUALIZADAS
+ * (cada módulo de RAM y cada disco por separado, no totalizados).
+ * Ej.: "Ryzen 7 5700X · 8 GB DDR4 · 8 GB DDR4 · SSD 894 GB · NVMe 477 GB · RTX 3050".
+ */
+function resumen_hardware(int $equipoId): string
+{
+    $comps = componentes_de($equipoId);
+    if (!$comps) {
+        return '';
+    }
+    $cpu = []; $ram = []; $disco = []; $gpu = [];
+    foreach ($comps as $c) {
+        switch ($c['tipo']) {
+            case 'CPU':
+                $cpu[] = trim(preg_replace('/\b\d+-Core Processor\b/i', '', $c['modelo']));
+                break;
+            case 'RAM':
+                $ram[] = trim(($c['memoria'] ?: 'RAM') . ($c['bus'] ? " {$c['bus']}" : ''));
+                break;
+            case 'Disco':
+                $disco[] = trim(_tipo_disco($c['bus']) . ' ' . $c['memoria']);
+                break;
+            case 'GPU':
+                $gpu[] = $c['modelo'];
+                break;
+        }
+    }
+    return implode(' · ', array_filter(array_merge($cpu, $ram, $disco, $gpu)));
+}
+
 /**
  * Guarda los componentes de un equipo desde arrays paralelos del POST.
  * Reemplaza los existentes. Espera claves comp_tipo[], comp_marca[], etc.

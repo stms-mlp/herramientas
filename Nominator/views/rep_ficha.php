@@ -26,6 +26,9 @@
   <?php endif; ?>
 
   <h3 class="rep-sub">Componentes</h3>
+  <?php $resHw = resumen_hardware((int)$eq['id']); if ($resHw): ?>
+    <p class="rep-resumen"><strong>Resumen:</strong> <?= h($resHw) ?></p>
+  <?php endif; ?>
   <?php if (!$componentes): ?>
     <p>Sin componentes registrados.</p>
   <?php else: ?>

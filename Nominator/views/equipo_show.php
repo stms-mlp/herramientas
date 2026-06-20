@@ -31,8 +31,12 @@
 <?php endif; ?>
 
 <h2>Componentes</h2>
+<?php $resHw = resumen_hardware((int)$eq['id']); ?>
+<?php if ($resHw): ?>
+  <p class="resumen-hw">🧩 <?= h($resHw) ?></p>
+<?php endif; ?>
 <?php if (!$componentes): ?>
-  <p class="vacio">Sin componentes cargados. (Importación CPU-Z/HWMonitor: fase siguiente.)</p>
+  <p class="vacio">Sin componentes cargados. Cargalos a mano o importá un reporte CPU-Z/HWMonitor desde «Editar».</p>
 <?php else: ?>
   <table class="tabla">
     <thead><tr><th>Tipo</th><th>Marca</th><th>Modelo</th><th>Velocidad</th><th>Memoria</th><th>Bus</th></tr></thead>
