@@ -112,6 +112,24 @@ $sel = fn(string $k, $v) => (string)$val($k) === (string)$v ? 'selected' : '';
   </fieldset>
 
   <fieldset>
+    <legend>Acceso remoto (AnyDesk)</legend>
+    <div class="cols">
+      <label>AnyDesk ID
+        <input name="anydesk_id" class="mono" value="<?= h($val('anydesk_id')) ?>"
+               placeholder="se completa solo desde el agente">
+      </label>
+      <?php if (puede(ROL_ADMIN)): ?>
+        <label>Clave remota <span class="hint">(sólo admin)</span>
+          <input name="anydesk_clave" value="<?= h($val('anydesk_clave')) ?>" autocomplete="off">
+        </label>
+      <?php endif; ?>
+    </div>
+    <?php if ($val('anydesk_id') !== ''): ?>
+      <p class="ayuda">Conectar: <a href="anydesk:<?= h($val('anydesk_id')) ?>" class="mono">anydesk:<?= h($val('anydesk_id')) ?></a></p>
+    <?php endif; ?>
+  </fieldset>
+
+  <fieldset>
     <legend>Notas</legend>
     <label>Observaciones <textarea name="observaciones" rows="2"><?= h($val('observaciones')) ?></textarea></label>
     <label>Notas técnicas / operativas (rol, software, VPN, etc.)

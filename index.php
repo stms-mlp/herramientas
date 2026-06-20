@@ -305,6 +305,7 @@ switch ($r) {
         $resH = nm_resolver_hostname($db, $tipo, $area, $_POST['hostname'] ?? '', null);
         if ($resH['errores']) { flash(implode(' ', $resH['errores']), 'error'); redir('reportes.ver&id=' . $repId); }
 
+        $rp = cpuz_parsear($rep['contenido']);
         $campos = [
             'id_patrimonial' => trim($_POST['id_patrimonial'] ?? '') ?: null,
             'hostname'    => $resH['hostname'],
@@ -313,6 +314,7 @@ switch ($r) {
             'estado_id'   => (int)($_POST['estado_id'] ?? 0) ?: null,
             'titularidad' => 'Municipal',
             'tenencia'    => 'En sede',
+            'anydesk_id'  => $rp['anydesk'] ?: null,
             'observaciones' => trim('Alta desde reporte del agente. Origen: '
                 . ($rep['origen_host'] ?: '?') . ' / ' . ($rep['origen_usuario'] ?: '?')),
             'correlativo' => $resH['correlativo'],
@@ -323,7 +325,7 @@ switch ($r) {
         $id = (int)$db->lastInsertId();
 
         // Componentes desde el reporte
-        $parsed = cpuz_parsear($rep['contenido'])['componentes'];
+        $parsed = $rp['componentes'];
         $datos = ['comp_tipo' => [], 'comp_marca' => [], 'comp_modelo' => [],
                   'comp_serie' => [], 'comp_velocidad' => [], 'comp_memoria' => [], 'comp_bus' => []];
         foreach ($parsed as $c) {
@@ -410,7 +412,13 @@ switch ($r) {
             'responsable' => trim($_POST['responsable'] ?? ''),
             'observaciones' => trim($_POST['observaciones'] ?? ''),
             'notas_tecnicas' => trim($_POST['notas_tecnicas'] ?? ''),
+            'anydesk_id'  => trim($_POST['anydesk_id'] ?? '') ?: null,
         ];
+        // La clave remota de AnyDesk sólo la puede cargar/cambiar el admin.
+        // Si no es admin, no se incluye la columna y se preserva el valor existente.
+        if (puede(ROL_ADMIN)) {
+            $campos['anydesk_clave'] = trim($_POST['anydesk_clave'] ?? '') ?: null;
+        }
 
         if ($editar) {
             $set = implode(', ', array_map(fn($c) => "$c=?", array_keys($campos)));

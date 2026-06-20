@@ -119,6 +119,35 @@ if ($discos) {
     }
 }
 
+# --- AnyDesk ID ---
+# Se obtiene de forma automatica: primero por la linea de comandos de AnyDesk
+# (--get-id) y, si falla, leyendo el archivo de configuracion system.conf.
+$anydeskId = ''
+$adExe = @(
+    "${env:ProgramFiles(x86)}\AnyDesk\AnyDesk.exe",
+    "$env:ProgramFiles\AnyDesk\AnyDesk.exe"
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $adExe) {
+    $adExe = (Get-ChildItem -Path "$env:ProgramData\AnyDesk","$env:APPDATA" -Filter 'AnyDesk.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+}
+if ($adExe) {
+    try { $anydeskId = (& $adExe --get-id 2>$null | Select-Object -First 1) } catch {}
+}
+if (-not $anydeskId) {
+    foreach ($conf in @("$env:ProgramData\AnyDesk\system.conf", "$env:APPDATA\AnyDesk\system.conf")) {
+        if (Test-Path $conf) {
+            $line = Select-String -Path $conf -Pattern 'ad.anynet.id' -SimpleMatch | Select-Object -First 1
+            if ($line -and $line.Line -match '=\s*(\d+)') { $anydeskId = $matches[1]; break }
+        }
+    }
+}
+if ("$anydeskId".Trim()) {
+    Add 'Anydesk'
+    Add $sep
+    Add (KV 'Anydesk ID' ("$anydeskId".Trim()))
+    Add ''
+}
+
 # --- GPU ---
 $gpu = Get-CimInstance Win32_VideoController | Select-Object -First 1
 if ($gpu) {

@@ -212,9 +212,15 @@ function cpuz_parsear(string $raw): array
         }
     }
 
+    // --- AnyDesk ID (nivel equipo, no es un componente) ---
+    $anydesk = '';
+    if (preg_match('/Anydesk(?:\s*ID)?[\t ]+([\d][\d ]{5,})/i', $raw, $m)) {
+        $anydesk = preg_replace('/\D/', '', $m[1]);
+    }
+
     $avisos = [];
     if (!$comp) {
         $avisos[] = 'No se reconocieron componentes. ¿Es un reporte de CPU-Z exportado en TXT o HTML?';
     }
-    return ['componentes' => $comp, 'avisos' => $avisos];
+    return ['componentes' => $comp, 'anydesk' => $anydesk, 'avisos' => $avisos];
 }

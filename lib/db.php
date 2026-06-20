@@ -103,6 +103,9 @@ function migrar(PDO $db): void
         keepass_uuid  TEXT,
         keepass_ref   TEXT,
         keepass_usuario TEXT,
+        -- acceso remoto AnyDesk (clave visible sólo por admin)
+        anydesk_id    TEXT,
+        anydesk_clave TEXT,
         -- baja
         baja_fecha    TEXT,
         baja_motivo   TEXT,
@@ -263,6 +266,19 @@ function migrar(PDO $db): void
         detalle    TEXT
     );
     SQL);
+
+    // Migraciones aditivas para bases ya existentes (agregar columnas faltantes).
+    asegurar_columna($db, 'equipos', 'anydesk_id', 'TEXT');
+    asegurar_columna($db, 'equipos', 'anydesk_clave', 'TEXT');
+}
+
+/** Agrega una columna a una tabla sólo si todavía no existe. */
+function asegurar_columna(PDO $db, string $tabla, string $columna, string $tipo): void
+{
+    $cols = $db->query("PRAGMA table_info($tabla)")->fetchAll(PDO::FETCH_COLUMN, 1);
+    if (!in_array($columna, $cols, true)) {
+        $db->exec("ALTER TABLE $tabla ADD COLUMN $columna $tipo");
+    }
 }
 
 /** Carga datos iniciales: tipos, estados, servicios, usuario admin y áreas. */
