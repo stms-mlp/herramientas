@@ -14,6 +14,11 @@ const ORG_DEPTO       = 'Departamento de Sistemas';
 const ORG_PREFIJO     = 'MLP';            // prefijo de la organización
 const ORG_ESCUDO      = 'assets/escudo.svg'; // placeholder; reemplazar por el escudo real
 
+// --- Agente de reporte de hardware (script de los usuarios) ---
+// Token compartido que el agente incluye al subir su reporte. CAMBIAR por uno
+// propio y poner el mismo valor en el script Reportar-Hardware.bat.
+const AGENTE_TOKEN = 'CAMBIAR-ESTE-TOKEN-1234';
+
 // --- Rutas ---
 const BASE_DIR  = __DIR__ . '/..';
 const DATOS_DIR = BASE_DIR . '/datos';

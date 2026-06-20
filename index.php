@@ -231,6 +231,117 @@ switch ($r) {
         echo json_encode($out, JSON_UNESCAPED_UNICODE);
         break;
 
+    // ---------- Agente de hardware (script de los usuarios) ----------
+    case 'agente.recibir': // recibe el reporte por HTTP con token (sin login)
+        header('Content-Type: text/plain; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405); exit("Usar POST.\n");
+        }
+        $token = $_GET['token'] ?? ($_SERVER['HTTP_X_NOMINATOR_TOKEN'] ?? '');
+        if (!hash_equals(AGENTE_TOKEN, (string)$token)) {
+            http_response_code(403); exit("Token inválido.\n");
+        }
+        $cuerpo = (string)file_get_contents('php://input');
+        if ($cuerpo === '' && !empty($_FILES['reporte']['tmp_name'])) {
+            $cuerpo = (string)file_get_contents($_FILES['reporte']['tmp_name']);
+        }
+        if (strlen($cuerpo) < 10) { http_response_code(400); exit("Reporte vacío.\n"); }
+        if (strlen($cuerpo) > 2_000_000) { http_response_code(413); exit("Reporte demasiado grande.\n"); }
+
+        require_once __DIR__ . '/lib/cpuz.php';
+        $p = cpuz_parsear($cuerpo);
+        $host = $usr = '';
+        if (preg_match('/Computer Name[\t ]+(.+)/i', $cuerpo, $m)) { $host = trim($m[1]); }
+        if (preg_match('/(?:^|\n)[\t ]*User[\t ]+(.+)/i', $cuerpo, $m)) { $usr = trim($m[1]); }
+        $resumen = implode(' · ', array_map(fn($c) => $c['tipo'] . ' ' . $c['modelo'], $p['componentes']));
+        db()->prepare(
+            'INSERT INTO reportes_pendientes (origen_host,origen_usuario,origen_ip,n_componentes,resumen,contenido)
+             VALUES (?,?,?,?,?,?)'
+        )->execute([$host, $usr, $_SERVER['REMOTE_ADDR'] ?? '', count($p['componentes']), $resumen, $cuerpo]);
+        echo "OK: reporte recibido (" . count($p['componentes']) . " componentes). ¡Gracias!\n";
+        break;
+
+    case 'reportes': // bandeja de reportes pendientes
+        requiere_rol(ROL_TECNICO);
+        $rows = db()->query('SELECT * FROM reportes_pendientes WHERE procesado=0 ORDER BY recibido DESC')->fetchAll();
+        pagina('Reportes de hardware', vista('reportes_list', ['reportes' => $rows, 'flash' => flash()]));
+        break;
+
+    case 'reportes.ver':
+        requiere_rol(ROL_TECNICO);
+        require_once __DIR__ . '/lib/cpuz.php';
+        $db = db();
+        $st = $db->prepare('SELECT * FROM reportes_pendientes WHERE id=?');
+        $st->execute([(int)($_GET['id'] ?? 0)]);
+        $rep = $st->fetch();
+        if (!$rep) { http_response_code(404); pagina('No encontrado', '<p>Reporte inexistente.</p>'); break; }
+        $comp = cpuz_parsear($rep['contenido'])['componentes'];
+        pagina('Reporte de ' . ($rep['origen_host'] ?: ('#' . $rep['id'])), vista('reporte_ver', [
+            'rep' => $rep, 'comp' => $comp,
+            'areas' => $db->query('SELECT id, codigo, descripcion FROM areas WHERE activa=1 ORDER BY codigo')->fetchAll(),
+            'tipos' => $db->query('SELECT * FROM tipos_equipo WHERE activo=1 ORDER BY nombre_es')->fetchAll(),
+            'estados' => $db->query('SELECT * FROM estados WHERE activo=1 ORDER BY id')->fetchAll(),
+            'flash' => flash(),
+        ]));
+        break;
+
+    case 'reportes.procesar': // crear equipo desde un reporte pendiente
+        requiere_rol(ROL_TECNICO);
+        csrf_check();
+        require_once __DIR__ . '/lib/cpuz.php';
+        $db = db();
+        $repId = (int)($_POST['reporte_id'] ?? 0);
+        $st = $db->prepare('SELECT * FROM reportes_pendientes WHERE id=?');
+        $st->execute([$repId]);
+        $rep = $st->fetch();
+        if (!$rep || $rep['procesado']) { flash('Reporte inexistente o ya procesado.', 'error'); redir('reportes'); }
+
+        $tipoId = (int)($_POST['tipo_id'] ?? 0);
+        $areaId = (int)($_POST['area_id'] ?? 0);
+        $tipo = $db->query('SELECT * FROM tipos_equipo WHERE id=' . $tipoId)->fetch();
+        $area = $areaId ? $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch() : null;
+        if (!$tipo || !$area) { flash('Elegí área y tipo.', 'error'); redir('reportes.ver&id=' . $repId); }
+
+        $resH = nm_resolver_hostname($db, $tipo, $area, $_POST['hostname'] ?? '', null);
+        if ($resH['errores']) { flash(implode(' ', $resH['errores']), 'error'); redir('reportes.ver&id=' . $repId); }
+
+        $campos = [
+            'id_patrimonial' => trim($_POST['id_patrimonial'] ?? '') ?: null,
+            'hostname'    => $resH['hostname'],
+            'tipo_id'     => $tipoId,
+            'area_id'     => $areaId,
+            'estado_id'   => (int)($_POST['estado_id'] ?? 0) ?: null,
+            'titularidad' => 'Municipal',
+            'tenencia'    => 'En sede',
+            'observaciones' => trim('Alta desde reporte del agente. Origen: '
+                . ($rep['origen_host'] ?: '?') . ' / ' . ($rep['origen_usuario'] ?: '?')),
+            'correlativo' => $resH['correlativo'],
+        ];
+        $cols = implode(',', array_keys($campos));
+        $ph = implode(',', array_fill(0, count($campos), '?'));
+        $db->prepare("INSERT INTO equipos ($cols) VALUES ($ph)")->execute(array_values($campos));
+        $id = (int)$db->lastInsertId();
+
+        // Componentes desde el reporte
+        $parsed = cpuz_parsear($rep['contenido'])['componentes'];
+        $datos = ['comp_tipo' => [], 'comp_marca' => [], 'comp_modelo' => [],
+                  'comp_serie' => [], 'comp_velocidad' => [], 'comp_memoria' => [], 'comp_bus' => []];
+        foreach ($parsed as $c) {
+            $datos['comp_tipo'][] = $c['tipo'];
+            $datos['comp_marca'][] = $c['marca'];
+            $datos['comp_modelo'][] = $c['modelo'];
+            $datos['comp_serie'][] = $c['n_serie'];
+            $datos['comp_velocidad'][] = $c['velocidad'];
+            $datos['comp_memoria'][] = $c['memoria'];
+            $datos['comp_bus'][] = $c['bus'];
+        }
+        guardar_componentes($db, $id, $datos);
+        $db->prepare('UPDATE reportes_pendientes SET procesado=1, equipo_id=? WHERE id=?')->execute([$id, $repId]);
+        auditar('reporte', $repId, 'procesado', 'equipo ' . $id);
+        flash('Equipo creado desde el reporte' . ($resH['hostname'] ? " como «{$resH['hostname']}»." : '.'));
+        redir('equipos.ver&id=' . $id);
+        break;
+
     case 'equipos.preview': // AJAX: previsualización del hostname
         requiere_login();
         header('Content-Type: application/json');

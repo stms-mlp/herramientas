@@ -144,6 +144,20 @@ function migrar(PDO $db): void
         UNIQUE(campo, valor)
     );
 
+    -- Reportes de hardware enviados por el agente de los usuarios (bandeja)
+    CREATE TABLE IF NOT EXISTS reportes_pendientes (
+        id            INTEGER PRIMARY KEY,
+        recibido      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        origen_host   TEXT,
+        origen_usuario TEXT,
+        origen_ip     TEXT,
+        n_componentes INTEGER DEFAULT 0,
+        resumen       TEXT,
+        contenido     TEXT NOT NULL,
+        procesado     INTEGER NOT NULL DEFAULT 0,
+        equipo_id     INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS componentes (
         id          INTEGER PRIMARY KEY,
         equipo_id   INTEGER NOT NULL REFERENCES equipos(id) ON DELETE CASCADE,
