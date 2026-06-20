@@ -30,7 +30,12 @@
       <td class="mono"><a href="?r=equipos.ver&id=<?= (int)$e['id'] ?>">
         <?= h($e['hostname'] ?: '—') ?></a></td>
       <td><?= h($e['tnom']) ?></td>
-      <td class="<?= nombre_equipo($e) === 'Genérico (armado)' ? 'tenue' : '' ?>"><?= h(nombre_equipo($e)) ?></td>
+      <td class="<?= nombre_equipo($e) === 'Genérico (armado)' ? 'tenue' : '' ?>">
+        <?= h(nombre_equipo($e)) ?>
+        <?php $rh = resumen_hardware((int)$e['id']); if ($rh): ?>
+          <br><small class="hw">🧩 <?= h($rh) ?></small>
+        <?php endif; ?>
+      </td>
       <td><?= h($e['acod']) ?></td>
       <td class="mono"><?= h($e['ip']) ?></td>
       <td><?= h($e['enom']) ?></td>
