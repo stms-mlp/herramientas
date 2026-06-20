@@ -19,6 +19,17 @@
   <div class="dato"><span>Titularidad</span><b><?= h($eq['titularidad']) ?></b></div>
   <div class="dato"><span>Tenencia</span><b><?= h($eq['tenencia']) ?><?= $eq['tenedor'] ? ' ('.h($eq['tenedor']).')' : '' ?></b></div>
   <div class="dato"><span>Responsable</span><b><?= h($eq['responsable'] ?: '—') ?></b></div>
+  <?php if (!empty($eq['anydesk_id'])): ?>
+    <div class="dato"><span>AnyDesk</span>
+      <b><a href="anydesk:<?= h($eq['anydesk_id']) ?>" class="mono" title="Abrir AnyDesk y conectar">🔗 <?= h($eq['anydesk_id']) ?></a></b>
+    </div>
+  <?php endif; ?>
+  <?php if (puede(ROL_ADMIN) && !empty($eq['anydesk_clave'])): ?>
+    <div class="dato"><span>Clave remota <small>(admin)</small></span>
+      <b class="mono"><span id="adk" data-clave="<?= h($eq['anydesk_clave']) ?>">••••••</span>
+        <a href="#" onclick="var s=document.getElementById('adk');s.textContent=s.dataset.clave;return false;">mostrar</a></b>
+    </div>
+  <?php endif; ?>
 </div>
 
 <?php if (!empty($atributos)): ?>

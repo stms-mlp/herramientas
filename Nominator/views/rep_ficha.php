@@ -14,6 +14,9 @@
         <th>Titularidad</th><td><?= h($eq['titularidad']) ?></td></tr>
     <tr><th>Tenencia</th><td><?= h($eq['tenencia']) ?></td>
         <th>Responsable</th><td><?= h($eq['responsable'] ?: '—') ?></td></tr>
+    <?php if (!empty($eq['anydesk_id'])): ?>
+      <tr><th>AnyDesk</th><td colspan="3" class="mono"><?= h($eq['anydesk_id']) ?></td></tr>
+    <?php endif; ?>
   </table>
 
   <?php if (!empty($atributos)): ?>
