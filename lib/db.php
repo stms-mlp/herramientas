@@ -265,6 +265,49 @@ function migrar(PDO $db): void
         accion     TEXT,
         detalle    TEXT
     );
+
+    -- ---------- Catálogo normalizado (Marca / Modelo) ----------
+    CREATE TABLE IF NOT EXISTS marcas (
+        id     INTEGER PRIMARY KEY,
+        nombre TEXT UNIQUE NOT NULL COLLATE NOCASE,
+        activo INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS modelos (
+        id       INTEGER PRIMARY KEY,
+        marca_id INTEGER NOT NULL REFERENCES marcas(id) ON DELETE CASCADE,
+        nombre   TEXT NOT NULL COLLATE NOCASE,
+        tipo_id  INTEGER REFERENCES tipos_equipo(id),  -- categoría opcional
+        activo   INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(marca_id, nombre)
+    );
+
+    -- ---------- Parámetros (campos específicos reutilizables) ----------
+    CREATE TABLE IF NOT EXISTS parametros (
+        id        INTEGER PRIMARY KEY,
+        nombre    TEXT UNIQUE NOT NULL COLLATE NOCASE,
+        tipo_dato TEXT NOT NULL DEFAULT 'texto', -- texto|numero|booleano|fecha|lista
+        unidad    TEXT,
+        sensible  INTEGER NOT NULL DEFAULT 0,
+        activo    INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS parametro_opciones (
+        id           INTEGER PRIMARY KEY,
+        parametro_id INTEGER NOT NULL REFERENCES parametros(id) ON DELETE CASCADE,
+        valor        TEXT NOT NULL,
+        orden        INTEGER NOT NULL DEFAULT 0
+    );
+
+    -- Qué parámetros aplican a cada tipo de equipo (relación N:N).
+    CREATE TABLE IF NOT EXISTS tipo_parametro (
+        id           INTEGER PRIMARY KEY,
+        tipo_id      INTEGER NOT NULL REFERENCES tipos_equipo(id) ON DELETE CASCADE,
+        parametro_id INTEGER NOT NULL REFERENCES parametros(id) ON DELETE CASCADE,
+        obligatorio  INTEGER NOT NULL DEFAULT 0,
+        orden        INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(tipo_id, parametro_id)
+    );
     SQL);
 
     // Migraciones aditivas para bases ya existentes (agregar columnas faltantes).

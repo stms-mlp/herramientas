@@ -16,6 +16,7 @@ require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/helpers.php';
 require_once __DIR__ . '/lib/hostname.php';
 require_once __DIR__ . '/lib/inventario.php';
+require_once __DIR__ . '/lib/aux.php';
 require_once __DIR__ . '/lib/view.php';
 
 db(); // inicializa esquema / semillas en el primer acceso
@@ -62,6 +63,50 @@ switch ($r) {
         break;
 
     // ---------- Áreas ----------
+    // ---------- Tablas auxiliares ----------
+    case 'auxiliares':
+        requiere_rol(ROL_ADMIN);
+        pagina('Tablas Auxiliares', vista('auxiliares_hub', ['cfg' => aux_config(), 'flash' => flash()]));
+        break;
+
+    case 'aux.tabla':
+        requiere_rol(ROL_ADMIN);
+        $def = aux_def((string)($_GET['t'] ?? ''));
+        if (!$def) { http_response_code(404); pagina('No encontrado', '<p>Tabla inexistente.</p>'); break; }
+        $editId = (int)($_GET['id'] ?? 0);
+        $edit = null;
+        if ($editId) {
+            $st = db()->prepare("SELECT id, {$def['col']} AS nombre, activo FROM {$def['tabla']} WHERE id=?");
+            $st->execute([$editId]);
+            $edit = $st->fetch() ?: null;
+        }
+        pagina($def['label'], vista('aux_tabla', [
+            'key' => $_GET['t'], 'def' => $def, 'items' => aux_items($def), 'edit' => $edit, 'flash' => flash(),
+        ]));
+        break;
+
+    case 'aux.guardar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $key = (string)($_POST['t'] ?? '');
+        $def = aux_def($key);
+        if (!$def) { http_response_code(404); exit('Tabla inexistente.'); }
+        [$ok, $msg] = aux_guardar($def, (int)($_POST['id'] ?? 0), $_POST['nombre'] ?? '', isset($_POST['activo']) ? 1 : 0);
+        flash($msg, $ok ? 'ok' : 'error');
+        redir('aux.tabla&t=' . urlencode($key));
+        break;
+
+    case 'aux.borrar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $key = (string)($_POST['t'] ?? '');
+        $def = aux_def($key);
+        if (!$def) { http_response_code(404); exit('Tabla inexistente.'); }
+        [$ok, $msg] = aux_borrar($def, (int)($_POST['id'] ?? 0));
+        flash($msg, $ok ? 'ok' : 'error');
+        redir('aux.tabla&t=' . urlencode($key));
+        break;
+
     case 'areas':
         requiere_login();
         $todas = db()->query('SELECT * FROM areas ORDER BY codigo')->fetchAll();

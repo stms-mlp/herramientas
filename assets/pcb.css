@@ -114,6 +114,16 @@ a.chip:hover{ transform:translateY(-2px); border-color:var(--cyan); text-decorat
 small.hw{ color:var(--tenue); font-family:var(--mono); font-size:.74rem; line-height:1.3; display:inline-block; }
 .rep-resumen{ background:#eef3f1; border-left:3px solid var(--pcb); padding:6px 10px; font-size:.88rem; }
 
+/* Hub de tablas auxiliares (estilo "tarjetas verdes" de referencia) */
+.aux-hub{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:1rem; }
+.aux-card{ background:linear-gradient(160deg,#11251d,#0a1c16); border:1px solid var(--borde); border-radius:8px; overflow:hidden; }
+.aux-card h3{ margin:0; padding:.5rem .8rem; background:linear-gradient(180deg,var(--pcb-2),var(--pcb-dark));
+  color:var(--oro); font-family:var(--mono); font-size:.95rem; border-bottom:1px solid var(--borde); }
+.aux-card ul{ list-style:none; margin:0; padding:.5rem .8rem; }
+.aux-card li{ padding:.18rem 0; }
+.aux-card .soon{ color:var(--tenue); }
+.aux-form{ max-width:560px; }
+
 /* ---- Formularios ---- */
 .form fieldset{ border:1px solid var(--borde); border-radius:8px; margin:0 0 1rem; padding:1rem 1.2rem; }
 .form legend{ color:var(--oro); font-family:var(--mono); padding:0 .4rem; }
