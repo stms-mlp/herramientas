@@ -191,6 +191,8 @@ button:hover,.btn:hover{ filter:brightness(1.08); text-decoration:none; }
 .inactiva td{ opacity:.5; }
 label.check{ display:flex; align-items:center; gap:.5rem; color:var(--serigrafia); }
 label.check input{ width:auto; margin:0; }
+label.radio{ display:flex; align-items:center; gap:.5rem; color:var(--serigrafia); }
+label.radio input{ width:auto; margin:0; }
 .tabla .acc a{ white-space:nowrap; }
 
 .pie{ text-align:center; color:var(--tenue); font-size:.78rem; padding:1.2rem; font-family:var(--mono); }

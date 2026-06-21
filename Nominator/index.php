@@ -146,8 +146,11 @@ switch ($r) {
             if (!$area) { http_response_code(404); pagina('No encontrado', '<p>Repartición inexistente.</p>'); break; }
         }
         $padres = $db->query('SELECT codigo, descripcion FROM areas ORDER BY codigo')->fetchAll();
+        $secretarias = $db->query(
+            "SELECT codigo, descripcion FROM areas WHERE codigo NOT LIKE '%#%' ORDER BY descripcion"
+        )->fetchAll();
         pagina($area ? 'Editar repartición' : 'Nueva repartición',
-            vista('area_form', ['area' => $area, 'padres' => $padres, 'flash' => flash()]));
+            vista('area_form', ['area' => $area, 'padres' => $padres, 'secretarias' => $secretarias, 'flash' => flash()]));
         break;
 
     case 'areas.crear':
@@ -157,18 +160,45 @@ switch ($r) {
         $db = db();
         $editar = ($r === 'areas.actualizar');
         $id = (int)($_POST['id'] ?? 0);
-        $codigo = trim($_POST['codigo'] ?? '');
-        $desc   = trim($_POST['descripcion'] ?? '');
-        if ($codigo === '' || $desc === '') {
-            flash('Código y descripción son obligatorios.', 'error');
-            redir($editar ? 'areas.editar&id=' . $id : 'areas.nueva');
+        $volver = $editar ? 'areas.editar&id=' . $id : 'areas.nueva';
+
+        $nivel = ($_POST['nivel'] ?? 'dependencia') === 'secretaria' ? 'secretaria' : 'dependencia';
+        $abrev = strtoupper(trim($_POST['abreviatura'] ?? ''));
+        $desc  = trim($_POST['descripcion'] ?? '');
+
+        if ($desc === '') {
+            flash('La descripción es obligatoria.', 'error'); redir($volver);
         }
+        if (!preg_match('/^[A-Z]{1,4}$/', $abrev)) {
+            flash('La abreviatura debe ser de 1 a 4 letras (sin números ni símbolos).', 'error'); redir($volver);
+        }
+
+        if ($nivel === 'secretaria') {
+            $codigo = $abrev;
+            $padre  = '';
+            $estructura = trim($_POST['estructura'] ?? '') ?: 'Secretaría';
+        } else {
+            $padre = strtoupper(trim($_POST['secretaria'] ?? ''));
+            if ($padre === '') {
+                flash('Elegí la secretaría a la que pertenece la dependencia.', 'error'); redir($volver);
+            }
+            $codigo = $abrev . '#' . $padre;
+            $estructura = trim($_POST['estructura'] ?? '') ?: 'Dirección';
+        }
+
+        // Unicidad del código (salvo el mismo registro al editar)
+        $chk = $db->prepare('SELECT COUNT(*) FROM areas WHERE codigo=? AND id<>?');
+        $chk->execute([$codigo, $id]);
+        if ($chk->fetchColumn() > 0) {
+            flash("Ya existe una repartición con el código «{$codigo}».", 'error'); redir($volver);
+        }
+
         $campos = [
             'codigo'       => $codigo,
             'descripcion'  => $desc,
-            'estructura'   => trim($_POST['estructura'] ?? ''),
-            'codigo_padre' => trim($_POST['codigo_padre'] ?? ''),
-            'abreviatura'  => trim($_POST['abreviatura'] ?? ''),
+            'estructura'   => $estructura,
+            'codigo_padre' => $padre,
+            'abreviatura'  => $abrev,
             'ubicacion'    => trim($_POST['ubicacion'] ?? ''),
             'activa'       => isset($_POST['activa']) ? 1 : 0,
         ];
@@ -187,7 +217,7 @@ switch ($r) {
             auditar('area', $id, 'alta', $codigo);
             flash('Repartición creada.');
         }
-        redir('areas');
+        redir('areas&sec=' . urlencode($nivel === 'secretaria' ? $codigo : $padre));
         break;
 
     // ---------- Equipos ----------
