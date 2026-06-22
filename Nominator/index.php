@@ -396,6 +396,8 @@ switch ($r) {
             'estado_id'   => (int)($_POST['estado_id'] ?? 0) ?: null,
             'titularidad' => 'Municipal',
             'tenencia'    => 'En sede',
+            'marca'       => $rp['sistema']['marca'] ?: null,
+            'modelo'      => $rp['sistema']['modelo'] ?: null,
             'anydesk_id'  => $rp['anydesk'] ?: null,
             'observaciones' => trim('Alta desde reporte del agente. Origen: '
                 . ($rep['origen_host'] ?: '?') . ' / ' . ($rep['origen_usuario'] ?: '?')),
@@ -436,9 +438,7 @@ switch ($r) {
         $area = $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch();
         $tipo = $db->query('SELECT * FROM tipos_equipo WHERE id=' . $tipoId)->fetch();
         if (!$area || !$tipo) {
-            $resp['error'] = 'Seleccioná área y tipo.';
-        } elseif (!$tipo['lleva_hostname']) {
-            $resp['error'] = 'Este tipo (' . $tipo['nombre_es'] . ') no lleva hostname; se asocia a un equipo padre.';
+            $resp['error'] = 'Seleccioná repartición y tipo.';
         } else {
             $corr = nm_proximo_correlativo($db, $areaId, $tipoId);
             $gen = nm_generar_hostname(nm_token_area($area['codigo']), $tipo['codigo'], $corr);

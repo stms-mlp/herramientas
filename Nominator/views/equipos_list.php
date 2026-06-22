@@ -21,7 +21,7 @@
 <?php else: ?>
 <table class="tabla">
   <thead>
-    <tr><th>Hostname</th><th>Tipo</th><th>Marca/Modelo</th><th>Repartición</th>
+    <tr><th>Nombre</th><th>Tipo</th><th>Marca/Modelo</th><th>Repartición</th>
         <th>IP</th><th>Estado</th><th>Titular.</th></tr>
   </thead>
   <tbody>

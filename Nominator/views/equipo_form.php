@@ -27,25 +27,31 @@ $sel = fn(string $k, $v) => (string)$val($k) === (string)$v ? 'selected' : '';
           <?php endforeach; ?>
         </select>
       </label>
-      <label>Repartición
-        <select name="area_id" id="area" required>
+      <label>Secretaría
+        <select id="secretaria">
           <option value="">—</option>
-          <?php foreach ($areas as $a): ?>
-            <option value="<?= (int)$a['id'] ?>" <?= $sel('area_id', $a['id']) ?>>
+          <?php foreach ($areas as $a): if (str_contains((string)$a['codigo'], '#')) continue; ?>
+            <option value="<?= h($a['codigo']) ?>" data-id="<?= (int)$a['id'] ?>">
               <?= h($a['codigo']) ?> — <?= h($a['descripcion']) ?>
             </option>
           <?php endforeach; ?>
+        </select>
+      </label>
+      <label>Dependencia
+        <select name="area_id" id="area" required>
+          <option value="">— elegí una secretaría —</option>
         </select>
       </label>
       <label>ID patrimonial
         <input name="id_patrimonial" value="<?= h($val('id_patrimonial')) ?>" placeholder="ej. MLP-0042">
       </label>
     </div>
-    <label>Hostname <span class="hint">(recomendación editable — dejalo vacío para autogenerar)</span>
+    <label>Nombre de dispositivo
+      <span class="hint">(recomendación editable; para equipos de red es el hostname NetBIOS/DNS)</span>
       <div class="host-row">
         <input name="hostname" id="hostname" class="mono host-input"
                value="<?= h($val('hostname')) ?>" maxlength="15" autocomplete="off"
-               placeholder="se sugiere al elegir tipo y repartición">
+               placeholder="se sugiere al elegir tipo, secretaría y dependencia">
         <button type="button" id="btn-sugerir" class="btn-sec">Sugerir</button>
       </div>
     </label>
@@ -155,7 +161,11 @@ window.ATTR_MAP = <?= json_encode($atrMapa, JSON_UNESCAPED_UNICODE) ?>;
 const VALORES = <?= json_encode((object)$valores, JSON_UNESCAPED_UNICODE) ?>;
 const COMPS   = <?= json_encode(array_values($componentes), JSON_UNESCAPED_UNICODE) ?>;
 
+const AREAS = <?= json_encode(array_map(fn($a) => ['id' => (int)$a['id'], 'codigo' => $a['codigo'], 'descripcion' => $a['descripcion']], $areas), JSON_UNESCAPED_UNICODE) ?>;
+const CUR_AREA = '<?= h($val('area_id')) ?>';
+
 const tipo = document.getElementById('tipo'),
+      secretaria = document.getElementById('secretaria'),
       area = document.getElementById('area'),
       hostInput = document.getElementById('hostname'),
       avisos = document.getElementById('avisos'),
@@ -163,16 +173,29 @@ const tipo = document.getElementById('tipo'),
       compBody = document.getElementById('comp-body');
 let editado = <?= $val('hostname') !== '' ? 'true' : 'false' ?>;
 
+// Agrupar dependencias por secretaría (parte después del '#')
+const depsBySec = {};
+AREAS.forEach(a => { const i = a.codigo.indexOf('#'); if (i >= 0) { const s = a.codigo.slice(i + 1); (depsBySec[s] = depsBySec[s] || []).push(a); } });
+
+function poblarDeps(selId) {
+  const opt = secretaria.options[secretaria.selectedIndex];
+  area.innerHTML = '<option value="">— elegí una dependencia —</option>';
+  const sec = secretaria.value;
+  if (!sec) return;
+  if (opt && opt.dataset.id) {
+    const o = new Option('(directamente en la secretaría)', opt.dataset.id);
+    area.appendChild(o);
+  }
+  (depsBySec[sec] || []).slice().sort((a, b) => a.descripcion.localeCompare(b.descripcion)).forEach(d => {
+    const o = new Option(d.codigo + ' — ' + d.descripcion, d.id);
+    if (String(d.id) === String(selId)) o.selected = true;
+    area.appendChild(o);
+  });
+}
+
 hostInput.addEventListener('input', () => { editado = true; });
-function llevaHost() { const o = tipo.options[tipo.selectedIndex]; return !o || o.dataset.host !== '0'; }
 
 async function sugerir(forzar) {
-  if (!llevaHost()) {
-    hostInput.value = ''; hostInput.disabled = true;
-    avisos.innerHTML = '<em>Este tipo se asocia a un equipo padre y no genera nombre de red.</em>';
-    return;
-  }
-  hostInput.disabled = false;
   if (!forzar && editado) return;
   if (!tipo.value || !area.value) { avisos.innerHTML = ''; return; }
   try {
@@ -188,14 +211,22 @@ function refrescarTipo() {
   sugerir(false);
 }
 tipo.addEventListener('change', refrescarTipo);
+secretaria.addEventListener('change', () => { poblarDeps(''); sugerir(false); });
 area.addEventListener('change', () => sugerir(false));
 document.getElementById('btn-sugerir').addEventListener('click', () => sugerir(true));
 document.getElementById('btn-add-comp').addEventListener('click', () => compBody.appendChild(nmCompRow('', {})));
 document.getElementById('btn-analizar').addEventListener('click', () =>
   nmAnalizar(document.getElementById('reporte'), compBody, '', document.getElementById('imp-msg')));
 
-// Estado inicial (alta o edición)
+// Estado inicial (alta o edición): preseleccionar secretaría/dependencia
+if (CUR_AREA) {
+  const cur = AREAS.find(a => String(a.id) === String(CUR_AREA));
+  if (cur) {
+    const i = cur.codigo.indexOf('#');
+    secretaria.value = i >= 0 ? cur.codigo.slice(i + 1) : cur.codigo;
+    poblarDeps(CUR_AREA);
+  }
+}
 if (tipo.value) nmRenderAtributos(attrCont, tipo.value, '', VALORES);
 COMPS.forEach(c => compBody.appendChild(nmCompRow('', c)));
-if (!llevaHost()) sugerir(false);
 </script>
