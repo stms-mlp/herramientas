@@ -8,7 +8,7 @@
 </div>
 
 <div class="ficha">
-  <div class="dato"><span>Hostname</span><b class="mono"><?= h($eq['hostname'] ?: '—') ?></b></div>
+  <div class="dato"><span>Nombre de dispositivo</span><b class="mono"><?= h($eq['hostname'] ?: '—') ?></b></div>
   <div class="dato"><span>ID patrimonial</span><b><?= h($eq['id_patrimonial'] ?: '—') ?></b></div>
   <div class="dato"><span>Tipo</span><b><?= h($eq['tnom']) ?></b></div>
   <div class="dato"><span>Repartición</span><b><?= h($eq['acod']) ?> — <?= h($eq['adesc']) ?></b></div>

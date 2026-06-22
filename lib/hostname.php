@@ -128,7 +128,8 @@ function nm_hostname_disponible(PDO $db, string $hostname, ?int $excluir = null)
 }
 
 /**
- * Resuelve el hostname a guardar a partir de lo que mandó el formulario.
+ * Resuelve el NOMBRE DE DISPOSITIVO a guardar. Todo equipo lleva nombre, tenga
+ * o no conexión de red (para los de red, además es un hostname NetBIOS/DNS).
  * Si viene vacío → autogenera (recomendación). Si viene cargado → lo normaliza
  * y valida (el usuario puede editar la recomendación).
  *
@@ -141,11 +142,6 @@ function nm_resolver_hostname(
     string $hostname_in,
     ?int $excluir = null
 ): array {
-    // Tipos sin hostname (monitor, UPS, etc.) no generan nombre de red.
-    if (empty($tipo['lleva_hostname'])) {
-        return ['hostname' => null, 'correlativo' => null, 'errores' => []];
-    }
-
     $hostname_in = trim($hostname_in);
     $correlativo = null;
 

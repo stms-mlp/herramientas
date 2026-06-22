@@ -49,6 +49,9 @@ $usuario = if ($cs.UserName) { $cs.UserName } else { $env:USERNAME }
 Add (KV 'Computer Name' $env:COMPUTERNAME)
 Add (KV 'User'          $usuario)
 Add (KV 'OS'            $os.Caption)
+# Marca y modelo del equipo (relevante en notebooks y equipos de marca).
+Add (KV 'System Manufacturer' ("$($cs.Manufacturer)".Trim()))
+Add (KV 'System Model'        ("$($cs.Model)".Trim()))
 Add ''
 
 # --- CPU ---

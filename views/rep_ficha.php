@@ -3,7 +3,7 @@
   <h2 class="rep-sub">Ficha de hardware</h2>
 
   <table class="rep-tabla">
-    <tr><th>Hostname</th><td class="mono"><?= h($eq['hostname'] ?: '—') ?></td>
+    <tr><th>Nombre de dispositivo</th><td class="mono"><?= h($eq['hostname'] ?: '—') ?></td>
         <th>ID patrimonial</th><td><?= h($eq['id_patrimonial'] ?: '—') ?></td></tr>
     <tr><th>Tipo</th><td><?= h($eq['tnom']) ?></td>
         <th>Estado</th><td><?= h($eq['enom']) ?></td></tr>

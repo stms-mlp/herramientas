@@ -53,7 +53,7 @@ function cpuz_parsear(string $raw): array
     $lineas = explode("\n", $raw);
     $n = count($lineas);
     $seccion = '';
-    $procesadores = []; $baseboard = []; $memdev = []; $drives = []; $display = []; $memgen = [];
+    $procesadores = []; $baseboard = []; $memdev = []; $drives = []; $display = []; $memgen = []; $sistema = [];
     $cur = [];        // bloque actual (por valor, sin referencias)
     $curTipo = '';
 
@@ -108,6 +108,10 @@ function cpuz_parsear(string $raw): array
             if (in_array($k, ['Memory Type', 'Memory Size'], true) && !isset($memgen[$k])) {
                 $memgen[$k] = $v;
             }
+        } elseif (stripos($seccion, 'System Information') === 0 && ($p = $kv($linea))) {
+            [$k, $v] = $p;
+            if ($k === 'System Manufacturer' && !isset($sistema['marca']))  { $sistema['marca'] = $v; }
+            if ($k === 'System Model'        && !isset($sistema['modelo'])) { $sistema['modelo'] = $v; }
         }
     }
     $flush();
@@ -218,9 +222,22 @@ function cpuz_parsear(string $raw): array
         $anydesk = preg_replace('/\D/', '', $m[1]);
     }
 
+    // Marca/modelo del equipo (notebooks, equipos de marca). Se descartan los
+    // placeholders típicos de equipos armados (OEM).
+    $placeholder = '/^(to be filled|system manufacturer|system product|default string|o\.?e\.?m\.?|unknown|n\/?a|none)/i';
+    $sysMarca = trim($sistema['marca'] ?? '');
+    $sysModelo = trim($sistema['modelo'] ?? '');
+    if (preg_match($placeholder, $sysMarca))  { $sysMarca = ''; }
+    if (preg_match($placeholder, $sysModelo)) { $sysModelo = ''; }
+
     $avisos = [];
     if (!$comp) {
         $avisos[] = 'No se reconocieron componentes. ¿Es un reporte de CPU-Z exportado en TXT o HTML?';
     }
-    return ['componentes' => $comp, 'anydesk' => $anydesk, 'avisos' => $avisos];
+    return [
+        'componentes' => $comp,
+        'anydesk' => $anydesk,
+        'sistema' => ['marca' => $sysMarca, 'modelo' => $sysModelo],
+        'avisos' => $avisos,
+    ];
 }
