@@ -114,6 +114,84 @@ switch ($r) {
         redir('aux.tabla&t=' . urlencode($key));
         break;
 
+    // ---------- Modelos (Modelo -> Marca + categoría) ----------
+    case 'modelos':
+        requiere_rol(ROL_ADMIN);
+        $db = db();
+        $q = trim((string)($_GET['q'] ?? ''));
+        $m = (int)($_GET['m'] ?? 0);
+        $sql = 'SELECT mo.*, ma.nombre marca, t.nombre_es tipo
+                FROM modelos mo JOIN marcas ma ON ma.id=mo.marca_id
+                LEFT JOIN tipos_equipo t ON t.id=mo.tipo_id WHERE 1=1';
+        $args = [];
+        if ($q !== '') { $sql .= ' AND mo.nombre LIKE ?'; $args[] = "%$q%"; }
+        if ($m)        { $sql .= ' AND mo.marca_id=?';     $args[] = $m; }
+        $sql .= ' ORDER BY ma.nombre COLLATE NOCASE, mo.nombre COLLATE NOCASE LIMIT 500';
+        $st = $db->prepare($sql);
+        $st->execute($args);
+        $editId = (int)($_GET['id'] ?? 0);
+        $edit = null;
+        if ($editId) {
+            $e = $db->prepare('SELECT * FROM modelos WHERE id=?');
+            $e->execute([$editId]);
+            $edit = $e->fetch() ?: null;
+        }
+        pagina('Modelos', vista('modelos_list', [
+            'modelos' => $st->fetchAll(),
+            'marcas'  => $db->query('SELECT id, nombre FROM marcas WHERE activo=1 ORDER BY nombre COLLATE NOCASE')->fetchAll(),
+            'tipos'   => $db->query('SELECT id, nombre_es FROM tipos_equipo WHERE activo=1 ORDER BY nombre_es')->fetchAll(),
+            'edit' => $edit, 'q' => $q, 'm' => $m, 'flash' => flash(),
+        ]));
+        break;
+
+    case 'modelos.guardar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $db = db();
+        $id = (int)($_POST['id'] ?? 0);
+        $nombre = trim((string)($_POST['nombre'] ?? ''));
+        $marcaId = (int)($_POST['marca_id'] ?? 0);
+        $tipoId = (int)($_POST['tipo_id'] ?? 0) ?: null;
+        if ($nombre === '' || !$marcaId) {
+            flash('Nombre y marca son obligatorios.', 'error'); redir('modelos');
+        }
+        try {
+            if ($id) {
+                $db->prepare('UPDATE modelos SET nombre=?, marca_id=?, tipo_id=? WHERE id=?')
+                   ->execute([$nombre, $marcaId, $tipoId, $id]);
+                auditar('modelo', $id, 'modificación', $nombre);
+            } else {
+                $db->prepare('INSERT INTO modelos (nombre, marca_id, tipo_id) VALUES (?,?,?)')
+                   ->execute([$nombre, $marcaId, $tipoId]);
+                auditar('modelo', (int)$db->lastInsertId(), 'alta', $nombre);
+            }
+            flash('Modelo guardado.');
+        } catch (PDOException $e) {
+            flash(str_contains($e->getMessage(), 'UNIQUE') ? 'Ya existe ese modelo para la marca.' : 'No se pudo guardar.', 'error');
+        }
+        redir('modelos' . ($marcaId ? '&m=' . $marcaId : ''));
+        break;
+
+    case 'modelos.borrar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        try {
+            db()->prepare('DELETE FROM modelos WHERE id=?')->execute([(int)($_POST['id'] ?? 0)]);
+            flash('Modelo eliminado.');
+        } catch (PDOException $e) {
+            flash('No se puede eliminar: está en uso.', 'error');
+        }
+        redir('modelos');
+        break;
+
+    case 'modelos.por_marca': // AJAX: modelos de una marca (para el form de equipos)
+        requiere_login();
+        header('Content-Type: application/json');
+        $st = db()->prepare('SELECT id, nombre FROM modelos WHERE marca_id=? AND activo=1 ORDER BY nombre COLLATE NOCASE');
+        $st->execute([(int)($_GET['marca'] ?? 0)]);
+        echo json_encode($st->fetchAll(), JSON_UNESCAPED_UNICODE);
+        break;
+
     case 'areas':
         requiere_login();
         $todas = db()->query('SELECT * FROM areas ORDER BY codigo')->fetchAll();
