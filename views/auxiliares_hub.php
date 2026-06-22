@@ -9,6 +9,7 @@ foreach ($cfg as $key => $d) {
 $grupos['Equipos']['__tipos']   = ['label' => 'Tipos de equipo', 'href' => '?r=tipos', 'soon' => true];
 $grupos['Catálogo']['__modelos'] = ['label' => 'Modelos', 'href' => '?r=modelos'];
 $grupos['Catálogo']['__params']  = ['label' => 'Parámetros', 'href' => '?r=parametros', 'soon' => true];
+$grupos['Insumos']['__toners'] = ['label' => 'Tóners', 'href' => '?r=toners'];
 $grupos['Organización']['__areas'] = ['label' => 'Reparticiones', 'href' => '?r=areas'];
 $grupos['Organización']['__users'] = ['label' => 'Usuarios', 'href' => '?r=usuarios', 'soon' => true];
 ksort($grupos);
