@@ -308,6 +308,26 @@ function migrar(PDO $db): void
         orden        INTEGER NOT NULL DEFAULT 0,
         UNIQUE(tipo_id, parametro_id)
     );
+
+    -- ---------- Tóners / insumos de impresora (normalizado) ----------
+    CREATE TABLE IF NOT EXISTS toners (
+        id          INTEGER PRIMARY KEY,
+        modelo      TEXT UNIQUE NOT NULL COLLATE NOCASE,  -- ej. CF258A, TN-660
+        color       TEXT,         -- Negro / Cyan / Magenta / Amarillo
+        rendimiento TEXT,         -- páginas declaradas
+        stock       INTEGER NOT NULL DEFAULT 0,
+        nota        TEXT,
+        activo      INTEGER NOT NULL DEFAULT 1
+    );
+
+    -- Compatibilidad tóner ↔ impresora. Con modelo_id NULL = toda la marca.
+    CREATE TABLE IF NOT EXISTS toner_compat (
+        id        INTEGER PRIMARY KEY,
+        toner_id  INTEGER NOT NULL REFERENCES toners(id) ON DELETE CASCADE,
+        marca_id  INTEGER NOT NULL REFERENCES marcas(id) ON DELETE CASCADE,
+        modelo_id INTEGER REFERENCES modelos(id) ON DELETE CASCADE,
+        UNIQUE(toner_id, marca_id, modelo_id)
+    );
     SQL);
 
     // Migraciones aditivas para bases ya existentes (agregar columnas faltantes).

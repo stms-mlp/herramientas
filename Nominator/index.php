@@ -192,6 +192,98 @@ switch ($r) {
         echo json_encode($st->fetchAll(), JSON_UNESCAPED_UNICODE);
         break;
 
+    // ---------- Tóners (catálogo + compatibilidad) ----------
+    case 'toners':
+        requiere_rol(ROL_ADMIN);
+        $db = db();
+        $q = trim((string)($_GET['q'] ?? ''));
+        $sql = 'SELECT t.*, (SELECT COUNT(*) FROM toner_compat c WHERE c.toner_id=t.id) ncompat FROM toners t WHERE 1=1';
+        $args = [];
+        if ($q !== '') { $sql .= ' AND t.modelo LIKE ?'; $args[] = "%$q%"; }
+        $sql .= ' ORDER BY t.modelo COLLATE NOCASE LIMIT 500';
+        $st = $db->prepare($sql);
+        $st->execute($args);
+        $editId = (int)($_GET['id'] ?? 0);
+        $edit = null; $compat = [];
+        if ($editId) {
+            $e = $db->prepare('SELECT * FROM toners WHERE id=?');
+            $e->execute([$editId]);
+            $edit = $e->fetch() ?: null;
+            if ($edit) {
+                $c = $db->prepare(
+                    'SELECT tc.id, ma.nombre marca, mo.nombre modelo
+                     FROM toner_compat tc JOIN marcas ma ON ma.id=tc.marca_id
+                     LEFT JOIN modelos mo ON mo.id=tc.modelo_id
+                     WHERE tc.toner_id=? ORDER BY ma.nombre, mo.nombre'
+                );
+                $c->execute([$editId]);
+                $compat = $c->fetchAll();
+            }
+        }
+        pagina('Tóners', vista('toners_list', [
+            'toners' => $st->fetchAll(), 'edit' => $edit, 'compat' => $compat,
+            'marcas' => $db->query('SELECT id, nombre FROM marcas WHERE activo=1 ORDER BY nombre COLLATE NOCASE')->fetchAll(),
+            'q' => $q, 'flash' => flash(),
+        ]));
+        break;
+
+    case 'toners.guardar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $db = db();
+        $id = (int)($_POST['id'] ?? 0);
+        $modelo = trim((string)($_POST['modelo'] ?? ''));
+        if ($modelo === '') { flash('El modelo del tóner es obligatorio.', 'error'); redir('toners'); }
+        $vals = [$modelo, trim((string)($_POST['color'] ?? '')), trim((string)($_POST['rendimiento'] ?? '')),
+                 (int)($_POST['stock'] ?? 0), trim((string)($_POST['nota'] ?? ''))];
+        try {
+            if ($id) {
+                $db->prepare('UPDATE toners SET modelo=?, color=?, rendimiento=?, stock=?, nota=? WHERE id=?')
+                   ->execute(array_merge($vals, [$id]));
+            } else {
+                $db->prepare('INSERT INTO toners (modelo,color,rendimiento,stock,nota) VALUES (?,?,?,?,?)')->execute($vals);
+                $id = (int)$db->lastInsertId();
+            }
+            auditar('toner', $id, $id ? 'guardar' : 'alta', $modelo);
+            flash('Tóner guardado.');
+        } catch (PDOException $e) {
+            flash(str_contains($e->getMessage(), 'UNIQUE') ? "Ya existe el tóner «{$modelo}»." : 'No se pudo guardar.', 'error');
+        }
+        redir('toners&id=' . $id);
+        break;
+
+    case 'toners.borrar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        db()->prepare('DELETE FROM toners WHERE id=?')->execute([(int)($_POST['id'] ?? 0)]);
+        flash('Tóner eliminado.');
+        redir('toners');
+        break;
+
+    case 'toners.compat_add':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $tid = (int)($_POST['toner_id'] ?? 0);
+        $marca = (int)($_POST['marca_id'] ?? 0);
+        $modelo = (int)($_POST['modelo_id'] ?? 0) ?: null;
+        if ($tid && $marca) {
+            try {
+                db()->prepare('INSERT INTO toner_compat (toner_id,marca_id,modelo_id) VALUES (?,?,?)')
+                    ->execute([$tid, $marca, $modelo]);
+            } catch (PDOException $e) { /* duplicado: ignorar */ }
+        } else {
+            flash('Elegí al menos la marca.', 'error');
+        }
+        redir('toners&id=' . $tid);
+        break;
+
+    case 'toners.compat_del':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        db()->prepare('DELETE FROM toner_compat WHERE id=?')->execute([(int)($_POST['id'] ?? 0)]);
+        redir('toners&id=' . (int)($_POST['toner_id'] ?? 0));
+        break;
+
     case 'areas':
         requiere_login();
         $todas = db()->query('SELECT * FROM areas ORDER BY codigo')->fetchAll();
