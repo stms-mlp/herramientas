@@ -7,7 +7,7 @@ foreach ($cfg as $key => $d) {
 }
 // Catálogos con pantalla propia (no genéricos) o pendientes
 $grupos['Equipos']['__tipos']   = ['label' => 'Tipos de equipo', 'href' => '?r=tipos', 'soon' => true];
-$grupos['Catálogo']['__modelos'] = ['label' => 'Modelos', 'href' => '?r=modelos', 'soon' => true];
+$grupos['Catálogo']['__modelos'] = ['label' => 'Modelos', 'href' => '?r=modelos'];
 $grupos['Catálogo']['__params']  = ['label' => 'Parámetros', 'href' => '?r=parametros', 'soon' => true];
 $grupos['Organización']['__areas'] = ['label' => 'Reparticiones', 'href' => '?r=areas'];
 $grupos['Organización']['__users'] = ['label' => 'Usuarios', 'href' => '?r=usuarios', 'soon' => true];
