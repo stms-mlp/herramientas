@@ -14,7 +14,7 @@ function h(?string $s): string
 }
 
 /** Redirección interna. */
-function redir(string $ruta): never
+function redir(string $ruta)
 {
     header('Location: ?r=' . $ruta);
     exit;

@@ -9,7 +9,9 @@ Ver el alcance completo en [`requerimientos.md`](requerimientos.md).
 
 ## Stack
 
-- **PHP** plano (sin framework) + **PDO/SQLite**. Sin Composer ni dependencias.
+- **PHP 8.0+** plano (sin framework) + **PDO/SQLite**. Sin Composer ni dependencias.
+  - En **WAMP**: clic izquierdo en el ícono de la bandeja → *PHP* → *Version* → **8.1** o superior.
+  - En **Donweb** u otro hosting: elegir PHP **8.0+** en el panel.
 - Ruteo por query-string (`index.php?r=...`); no requiere `mod_rewrite`.
 - Pensado para **hosting compartido** (Donweb): subir por FTP y funciona.
 

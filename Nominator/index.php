@@ -8,6 +8,13 @@
 
 declare(strict_types=1);
 
+// Nominator requiere PHP 8.0+ (usa match, str_contains, etc.).
+if (PHP_VERSION_ID < 80000) {
+    http_response_code(500);
+    exit('Nominator requiere PHP 8.0 o superior (detectada: ' . PHP_VERSION . '). '
+        . 'En WAMP: clic izquierdo en el ícono de la bandeja → PHP → Version → elegí 8.1 o superior.');
+}
+
 session_start();
 
 require_once __DIR__ . '/lib/config.php';
