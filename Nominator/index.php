@@ -854,6 +854,26 @@ switch ($r) {
         redir('equipos&area=' . $areaId);
         break;
 
+    case 'equipos.borrar': // eliminar equipo (solo admin)
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $db = db();
+        $id = (int)($_POST['id'] ?? 0);
+        $st = $db->prepare('SELECT hostname FROM equipos WHERE id=?');
+        $st->execute([$id]);
+        $hn = $st->fetchColumn();
+        if ($hn !== false) {
+            // Las tablas relacionadas (componentes, accesos, etc.) tienen ON DELETE CASCADE.
+            $db->prepare('UPDATE reportes_pendientes SET equipo_id=NULL WHERE equipo_id=?')->execute([$id]);
+            $db->prepare('DELETE FROM equipos WHERE id=?')->execute([$id]);
+            auditar('equipo', $id, 'eliminación', (string)$hn);
+            flash('Equipo eliminado.');
+        } else {
+            flash('Equipo inexistente.', 'error');
+        }
+        redir('equipos');
+        break;
+
     case 'equipos.ver':
         requiere_login();
         $db = db();
