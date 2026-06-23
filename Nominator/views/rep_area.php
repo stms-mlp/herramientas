@@ -1,9 +1,11 @@
 <?php /** @var array $area @var array $equipos */ ?>
 <section class="rep-cuerpo">
   <h2 class="rep-sub">Declaración de inventario — <?= h($area['descripcion']) ?></h2>
+  <?php $incluidos = array_values(array_unique(array_map(fn($e) => $e['tnom'], $equipos))); ?>
   <p class="rep-meta">
     Código de repartición: <strong class="mono"><?= h($area['codigo']) ?></strong> ·
-    Equipos municipales activos: <strong><?= count($equipos) ?></strong>
+    Equipos: <strong><?= count($equipos) ?></strong>
+    <?php if ($incluidos): ?>· Tipos incluidos: <?= h(implode(', ', $incluidos)) ?><?php endif; ?>
   </p>
 
   <?php if (!$equipos): ?>
@@ -20,7 +22,7 @@
           <td><?= $i + 1 ?></td>
           <td class="mono"><?= h($e['hostname'] ?: '—') ?></td>
           <td><?= h($e['tnom']) ?></td>
-          <td><?= h(trim(($e['marca'] ?? '').' '.($e['modelo'] ?? ''))) ?></td>
+          <td><?= h(nombre_equipo($e)) ?></td>
           <td><?= h($e['n_serie'] ?: '—') ?></td>
           <td><?= h($e['id_patrimonial'] ?: '—') ?></td>
           <td class="mono"><?= h($e['ip'] ?: '—') ?></td>

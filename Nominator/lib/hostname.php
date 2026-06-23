@@ -112,3 +112,57 @@ function nm_proximo_correlativo(PDO $db, int $area_id, int $tipo_id): int
     $st->execute([$area_id, $tipo_id]);
     return (int)$st->fetchColumn();
 }
+
+/** ¿El hostname está libre? (opcionalmente excluyendo un equipo al editar). */
+function nm_hostname_disponible(PDO $db, string $hostname, ?int $excluir = null): bool
+{
+    $sql = 'SELECT COUNT(*) FROM equipos WHERE hostname=?';
+    $args = [$hostname];
+    if ($excluir) {
+        $sql .= ' AND id<>?';
+        $args[] = $excluir;
+    }
+    $st = $db->prepare($sql);
+    $st->execute($args);
+    return (int)$st->fetchColumn() === 0;
+}
+
+/**
+ * Resuelve el NOMBRE DE DISPOSITIVO a guardar. Todo equipo lleva nombre, tenga
+ * o no conexión de red (para los de red, además es un hostname NetBIOS/DNS).
+ * Si viene vacío → autogenera (recomendación). Si viene cargado → lo normaliza
+ * y valida (el usuario puede editar la recomendación).
+ *
+ * @return array{hostname:?string, correlativo:?int, errores:string[]}
+ */
+function nm_resolver_hostname(
+    PDO $db,
+    array $tipo,
+    ?array $area,
+    string $hostname_in,
+    ?int $excluir = null
+): array {
+    $hostname_in = trim($hostname_in);
+    $correlativo = null;
+
+    if ($hostname_in === '') {
+        if (!$area) {
+            return ['hostname' => null, 'correlativo' => null,
+                    'errores' => ['Seleccioná una repartición para generar el nombre.']];
+        }
+        $correlativo = nm_proximo_correlativo($db, (int)$area['id'], (int)$tipo['id']);
+        $gen = nm_generar_hostname(nm_token_area($area['codigo']), $tipo['codigo'], $correlativo);
+        $hostname = $gen['hostname'];
+    } else {
+        // Respeta la edición del usuario, pero fuerza reglas NetBIOS/DNS.
+        $hostname = nm_normalizar($hostname_in);
+    }
+
+    $errores = nm_validar_hostname($hostname);
+    if (!$errores && !nm_hostname_disponible($db, $hostname, $excluir)) {
+        $errores[] = "El hostname «{$hostname}» ya está en uso por otro equipo.";
+    }
+
+    return ['hostname' => $hostname, 'correlativo' => $correlativo, 'errores' => $errores];
+}
+

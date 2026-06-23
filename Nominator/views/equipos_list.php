@@ -12,7 +12,7 @@
     </select>
   </label>
   <?php if ($filtroArea): ?>
-    <a class="btn" href="?r=reporte.area&area=<?= $filtroArea ?>" target="_blank">📄 Extracto del área</a>
+    <a class="btn" href="?r=reporte.area_opciones&area=<?= $filtroArea ?>">📄 Extracto del área</a>
   <?php endif; ?>
 </form>
 
@@ -21,7 +21,7 @@
 <?php else: ?>
 <table class="tabla">
   <thead>
-    <tr><th>Hostname</th><th>Tipo</th><th>Marca/Modelo</th><th>Repartición</th>
+    <tr><th>Nombre</th><th>Tipo</th><th>Marca/Modelo</th><th>Repartición</th>
         <th>IP</th><th>Estado</th><th>Titular.</th></tr>
   </thead>
   <tbody>
@@ -30,7 +30,12 @@
       <td class="mono"><a href="?r=equipos.ver&id=<?= (int)$e['id'] ?>">
         <?= h($e['hostname'] ?: '—') ?></a></td>
       <td><?= h($e['tnom']) ?></td>
-      <td><?= h(trim(($e['marca'] ?? '') . ' ' . ($e['modelo'] ?? ''))) ?></td>
+      <td class="<?= nombre_equipo($e) === 'Genérico (armado)' ? 'tenue' : '' ?>">
+        <?= h(nombre_equipo($e)) ?>
+        <?php $rh = resumen_hardware((int)$e['id']); if ($rh): ?>
+          <br><small class="hw">🧩 <?= h($rh) ?></small>
+        <?php endif; ?>
+      </td>
       <td><?= h($e['acod']) ?></td>
       <td class="mono"><?= h($e['ip']) ?></td>
       <td><?= h($e['enom']) ?></td>

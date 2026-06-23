@@ -28,6 +28,7 @@ function db(): PDO
     if ($nuevo) {
         sembrar($pdo);
     }
+    asegurar_atributos($pdo);
     return $pdo;
 }
 
@@ -102,6 +103,9 @@ function migrar(PDO $db): void
         keepass_uuid  TEXT,
         keepass_ref   TEXT,
         keepass_usuario TEXT,
+        -- acceso remoto AnyDesk (clave visible sólo por admin)
+        anydesk_id    TEXT,
+        anydesk_clave TEXT,
         -- baja
         baja_fecha    TEXT,
         baja_motivo   TEXT,
@@ -133,6 +137,28 @@ function migrar(PDO $db): void
         id     INTEGER PRIMARY KEY,
         nombre TEXT UNIQUE NOT NULL,
         activo INTEGER NOT NULL DEFAULT 1
+    );
+
+    -- Catálogo de valores reutilizables (marcas, modelos, etc.)
+    CREATE TABLE IF NOT EXISTS catalogo (
+        id    INTEGER PRIMARY KEY,
+        campo TEXT NOT NULL,   -- marca | modelo | comp_marca | comp_modelo
+        valor TEXT NOT NULL,
+        UNIQUE(campo, valor)
+    );
+
+    -- Reportes de hardware enviados por el agente de los usuarios (bandeja)
+    CREATE TABLE IF NOT EXISTS reportes_pendientes (
+        id            INTEGER PRIMARY KEY,
+        recibido      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        origen_host   TEXT,
+        origen_usuario TEXT,
+        origen_ip     TEXT,
+        n_componentes INTEGER DEFAULT 0,
+        resumen       TEXT,
+        contenido     TEXT NOT NULL,
+        procesado     INTEGER NOT NULL DEFAULT 0,
+        equipo_id     INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS componentes (
@@ -239,7 +265,83 @@ function migrar(PDO $db): void
         accion     TEXT,
         detalle    TEXT
     );
+
+    -- ---------- Catálogo normalizado (Marca / Modelo) ----------
+    CREATE TABLE IF NOT EXISTS marcas (
+        id     INTEGER PRIMARY KEY,
+        nombre TEXT UNIQUE NOT NULL COLLATE NOCASE,
+        activo INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS modelos (
+        id       INTEGER PRIMARY KEY,
+        marca_id INTEGER NOT NULL REFERENCES marcas(id) ON DELETE CASCADE,
+        nombre   TEXT NOT NULL COLLATE NOCASE,
+        tipo_id  INTEGER REFERENCES tipos_equipo(id),  -- categoría opcional
+        activo   INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(marca_id, nombre)
+    );
+
+    -- ---------- Parámetros (campos específicos reutilizables) ----------
+    CREATE TABLE IF NOT EXISTS parametros (
+        id        INTEGER PRIMARY KEY,
+        nombre    TEXT UNIQUE NOT NULL COLLATE NOCASE,
+        tipo_dato TEXT NOT NULL DEFAULT 'texto', -- texto|numero|booleano|fecha|lista
+        unidad    TEXT,
+        sensible  INTEGER NOT NULL DEFAULT 0,
+        activo    INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS parametro_opciones (
+        id           INTEGER PRIMARY KEY,
+        parametro_id INTEGER NOT NULL REFERENCES parametros(id) ON DELETE CASCADE,
+        valor        TEXT NOT NULL,
+        orden        INTEGER NOT NULL DEFAULT 0
+    );
+
+    -- Qué parámetros aplican a cada tipo de equipo (relación N:N).
+    CREATE TABLE IF NOT EXISTS tipo_parametro (
+        id           INTEGER PRIMARY KEY,
+        tipo_id      INTEGER NOT NULL REFERENCES tipos_equipo(id) ON DELETE CASCADE,
+        parametro_id INTEGER NOT NULL REFERENCES parametros(id) ON DELETE CASCADE,
+        obligatorio  INTEGER NOT NULL DEFAULT 0,
+        orden        INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(tipo_id, parametro_id)
+    );
+
+    -- ---------- Tóners / insumos de impresora (normalizado) ----------
+    CREATE TABLE IF NOT EXISTS toners (
+        id          INTEGER PRIMARY KEY,
+        modelo      TEXT UNIQUE NOT NULL COLLATE NOCASE,  -- ej. CF258A, TN-660
+        color       TEXT,         -- Negro / Cyan / Magenta / Amarillo
+        rendimiento TEXT,         -- páginas declaradas
+        stock       INTEGER NOT NULL DEFAULT 0,
+        nota        TEXT,
+        activo      INTEGER NOT NULL DEFAULT 1
+    );
+
+    -- Compatibilidad tóner ↔ impresora. Con modelo_id NULL = toda la marca.
+    CREATE TABLE IF NOT EXISTS toner_compat (
+        id        INTEGER PRIMARY KEY,
+        toner_id  INTEGER NOT NULL REFERENCES toners(id) ON DELETE CASCADE,
+        marca_id  INTEGER NOT NULL REFERENCES marcas(id) ON DELETE CASCADE,
+        modelo_id INTEGER REFERENCES modelos(id) ON DELETE CASCADE,
+        UNIQUE(toner_id, marca_id, modelo_id)
+    );
     SQL);
+
+    // Migraciones aditivas para bases ya existentes (agregar columnas faltantes).
+    asegurar_columna($db, 'equipos', 'anydesk_id', 'TEXT');
+    asegurar_columna($db, 'equipos', 'anydesk_clave', 'TEXT');
+}
+
+/** Agrega una columna a una tabla sólo si todavía no existe. */
+function asegurar_columna(PDO $db, string $tabla, string $columna, string $tipo): void
+{
+    $cols = $db->query("PRAGMA table_info($tabla)")->fetchAll(PDO::FETCH_COLUMN, 1);
+    if (!in_array($columna, $cols, true)) {
+        $db->exec("ALTER TABLE $tabla ADD COLUMN $columna $tipo");
+    }
 }
 
 /** Carga datos iniciales: tipos, estados, servicios, usuario admin y áreas. */
@@ -288,5 +390,52 @@ function sembrar(PDO $db): void
     if (file_exists(CSV_AREAS)) {
         require_once __DIR__ . '/areas_import.php';
         importar_areas($db, CSV_AREAS);
+    }
+}
+
+/**
+ * Carga atributos sugeridos por tipo (editables luego). Idempotente: sólo
+ * agrega los defaults a un tipo que todavía no tiene atributos definidos.
+ */
+function asegurar_atributos(PDO $db): void
+{
+    // [nombre, tipo_dato, opciones]
+    $defaults = [
+        'DK' => [['Sistema operativo', 'texto', '']],
+        'NB' => [['Sistema operativo', 'texto', ''], ['Pantalla', 'texto', ''],
+                 ['Batería', 'texto', ''], ['MAC WiFi', 'texto', '']],
+        'SV' => [['Sistema operativo', 'texto', ''], ['Roles/Servicios', 'texto', ''],
+                 ['RAID', 'texto', '']],
+        'RT' => [['Firmware', 'texto', ''], ['Puertos LAN', 'numero', ''],
+                 ['Usuario admin', 'texto', '']],
+        'SW' => [['Puertos', 'numero', ''], ['Administrable', 'booleano', ''],
+                 ['PoE', 'booleano', ''], ['VLANs', 'texto', '']],
+        'DV' => [['Usuario', 'texto', ''], ['Cantidad de cámaras', 'numero', ''],
+                 ['Almacenamiento', 'texto', ''], ['Días de grabación', 'numero', ''],
+                 ['Marca de cámaras', 'texto', '']],
+        'PR' => [['Tecnología', 'lista', 'Láser,Inyección,Sólida'], ['Color', 'booleano', ''],
+                 ['Conectividad', 'lista', 'USB,Red,WiFi,USB+Red'], ['Dúplex', 'booleano', ''],
+                 ['Contador de páginas', 'numero', ''], ['Modelo de tóner', 'texto', '']],
+        'DY' => [['Pulgadas', 'texto', ''], ['Resolución', 'texto', ''], ['Panel', 'texto', '']],
+        'UP' => [['Potencia (VA)', 'numero', ''], ['Tomas', 'numero', ''], ['Autonomía', 'texto', '']],
+        'VR' => [['Potencia', 'texto', ''], ['Tomas', 'numero', '']],
+        'MB' => [['IMEI', 'texto', ''], ['Línea/Número', 'texto', ''], ['Sistema operativo', 'texto', '']],
+    ];
+    $tipos = $db->query('SELECT id, codigo FROM tipos_equipo')->fetchAll();
+    $cuenta = $db->prepare('SELECT COUNT(*) FROM atributos_tipo WHERE tipo_id=?');
+    $ins = $db->prepare(
+        'INSERT INTO atributos_tipo (tipo_id, nombre, tipo_dato, opciones, orden) VALUES (?,?,?,?,?)'
+    );
+    foreach ($tipos as $t) {
+        if (empty($defaults[$t['codigo']])) {
+            continue;
+        }
+        $cuenta->execute([$t['id']]);
+        if ((int)$cuenta->fetchColumn() > 0) {
+            continue; // ya tiene atributos: no piso
+        }
+        foreach ($defaults[$t['codigo']] as $o => [$nombre, $dato, $opc]) {
+            $ins->execute([$t['id'], $nombre, $dato, $opc ?: null, $o]);
+        }
     }
 }

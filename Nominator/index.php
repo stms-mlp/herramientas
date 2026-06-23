@@ -8,6 +8,13 @@
 
 declare(strict_types=1);
 
+// Nominator requiere PHP 8.0+ (usa match, str_contains, etc.).
+if (PHP_VERSION_ID < 80000) {
+    http_response_code(500);
+    exit('Nominator requiere PHP 8.0 o superior (detectada: ' . PHP_VERSION . '). '
+        . 'En WAMP: clic izquierdo en el ícono de la bandeja → PHP → Version → elegí 8.1 o superior.');
+}
+
 session_start();
 
 require_once __DIR__ . '/lib/config.php';
@@ -15,6 +22,8 @@ require_once __DIR__ . '/lib/db.php';
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/helpers.php';
 require_once __DIR__ . '/lib/hostname.php';
+require_once __DIR__ . '/lib/inventario.php';
+require_once __DIR__ . '/lib/aux.php';
 require_once __DIR__ . '/lib/view.php';
 
 db(); // inicializa esquema / semillas en el primer acceso
@@ -61,10 +70,426 @@ switch ($r) {
         break;
 
     // ---------- Áreas ----------
+    // ---------- Tablas auxiliares ----------
+    case 'auxiliares':
+        requiere_rol(ROL_ADMIN);
+        pagina('Tablas Auxiliares', vista('auxiliares_hub', ['cfg' => aux_config(), 'flash' => flash()]));
+        break;
+
+    case 'aux.tabla':
+        requiere_rol(ROL_ADMIN);
+        $def = aux_def((string)($_GET['t'] ?? ''));
+        if (!$def) { http_response_code(404); pagina('No encontrado', '<p>Tabla inexistente.</p>'); break; }
+        $editId = (int)($_GET['id'] ?? 0);
+        $edit = null;
+        if ($editId) {
+            $st = db()->prepare("SELECT id, {$def['col']} AS nombre, activo FROM {$def['tabla']} WHERE id=?");
+            $st->execute([$editId]);
+            $edit = $st->fetch() ?: null;
+        }
+        pagina($def['label'], vista('aux_tabla', [
+            'key' => $_GET['t'], 'def' => $def, 'items' => aux_items($def), 'edit' => $edit, 'flash' => flash(),
+        ]));
+        break;
+
+    case 'aux.guardar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $key = (string)($_POST['t'] ?? '');
+        $def = aux_def($key);
+        if (!$def) { http_response_code(404); exit('Tabla inexistente.'); }
+        [$ok, $msg] = aux_guardar($def, (int)($_POST['id'] ?? 0), $_POST['nombre'] ?? '', isset($_POST['activo']) ? 1 : 0);
+        flash($msg, $ok ? 'ok' : 'error');
+        redir('aux.tabla&t=' . urlencode($key));
+        break;
+
+    case 'aux.borrar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $key = (string)($_POST['t'] ?? '');
+        $def = aux_def($key);
+        if (!$def) { http_response_code(404); exit('Tabla inexistente.'); }
+        [$ok, $msg] = aux_borrar($def, (int)($_POST['id'] ?? 0));
+        flash($msg, $ok ? 'ok' : 'error');
+        redir('aux.tabla&t=' . urlencode($key));
+        break;
+
+    // ---------- Modelos (Modelo -> Marca + categoría) ----------
+    case 'modelos':
+        requiere_rol(ROL_ADMIN);
+        $db = db();
+        $q = trim((string)($_GET['q'] ?? ''));
+        $m = (int)($_GET['m'] ?? 0);
+        $sql = 'SELECT mo.*, ma.nombre marca, t.nombre_es tipo
+                FROM modelos mo JOIN marcas ma ON ma.id=mo.marca_id
+                LEFT JOIN tipos_equipo t ON t.id=mo.tipo_id WHERE 1=1';
+        $args = [];
+        if ($q !== '') { $sql .= ' AND mo.nombre LIKE ?'; $args[] = "%$q%"; }
+        if ($m)        { $sql .= ' AND mo.marca_id=?';     $args[] = $m; }
+        $sql .= ' ORDER BY ma.nombre COLLATE NOCASE, mo.nombre COLLATE NOCASE LIMIT 500';
+        $st = $db->prepare($sql);
+        $st->execute($args);
+        $editId = (int)($_GET['id'] ?? 0);
+        $edit = null;
+        if ($editId) {
+            $e = $db->prepare('SELECT * FROM modelos WHERE id=?');
+            $e->execute([$editId]);
+            $edit = $e->fetch() ?: null;
+        }
+        pagina('Modelos', vista('modelos_list', [
+            'modelos' => $st->fetchAll(),
+            'marcas'  => $db->query('SELECT id, nombre FROM marcas WHERE activo=1 ORDER BY nombre COLLATE NOCASE')->fetchAll(),
+            'tipos'   => $db->query('SELECT id, nombre_es FROM tipos_equipo WHERE activo=1 ORDER BY nombre_es')->fetchAll(),
+            'edit' => $edit, 'q' => $q, 'm' => $m, 'flash' => flash(),
+        ]));
+        break;
+
+    case 'modelos.guardar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $db = db();
+        $id = (int)($_POST['id'] ?? 0);
+        $nombre = trim((string)($_POST['nombre'] ?? ''));
+        $marcaId = (int)($_POST['marca_id'] ?? 0);
+        $tipoId = (int)($_POST['tipo_id'] ?? 0) ?: null;
+        if ($nombre === '' || !$marcaId) {
+            flash('Nombre y marca son obligatorios.', 'error'); redir('modelos');
+        }
+        try {
+            if ($id) {
+                $db->prepare('UPDATE modelos SET nombre=?, marca_id=?, tipo_id=? WHERE id=?')
+                   ->execute([$nombre, $marcaId, $tipoId, $id]);
+                auditar('modelo', $id, 'modificación', $nombre);
+            } else {
+                $db->prepare('INSERT INTO modelos (nombre, marca_id, tipo_id) VALUES (?,?,?)')
+                   ->execute([$nombre, $marcaId, $tipoId]);
+                auditar('modelo', (int)$db->lastInsertId(), 'alta', $nombre);
+            }
+            flash('Modelo guardado.');
+        } catch (PDOException $e) {
+            flash(str_contains($e->getMessage(), 'UNIQUE') ? 'Ya existe ese modelo para la marca.' : 'No se pudo guardar.', 'error');
+        }
+        redir('modelos' . ($marcaId ? '&m=' . $marcaId : ''));
+        break;
+
+    case 'modelos.borrar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        try {
+            db()->prepare('DELETE FROM modelos WHERE id=?')->execute([(int)($_POST['id'] ?? 0)]);
+            flash('Modelo eliminado.');
+        } catch (PDOException $e) {
+            flash('No se puede eliminar: está en uso.', 'error');
+        }
+        redir('modelos');
+        break;
+
+    case 'modelos.por_marca': // AJAX: modelos de una marca (para el form de equipos)
+        requiere_login();
+        header('Content-Type: application/json');
+        $st = db()->prepare('SELECT id, nombre FROM modelos WHERE marca_id=? AND activo=1 ORDER BY nombre COLLATE NOCASE');
+        $st->execute([(int)($_GET['marca'] ?? 0)]);
+        echo json_encode($st->fetchAll(), JSON_UNESCAPED_UNICODE);
+        break;
+
+    // ---------- Tóners (catálogo + compatibilidad) ----------
+    case 'toners':
+        requiere_rol(ROL_ADMIN);
+        $db = db();
+        $q = trim((string)($_GET['q'] ?? ''));
+        $sql = 'SELECT t.*, (SELECT COUNT(*) FROM toner_compat c WHERE c.toner_id=t.id) ncompat FROM toners t WHERE 1=1';
+        $args = [];
+        if ($q !== '') { $sql .= ' AND t.modelo LIKE ?'; $args[] = "%$q%"; }
+        $sql .= ' ORDER BY t.modelo COLLATE NOCASE LIMIT 500';
+        $st = $db->prepare($sql);
+        $st->execute($args);
+        $editId = (int)($_GET['id'] ?? 0);
+        $edit = null; $compat = [];
+        if ($editId) {
+            $e = $db->prepare('SELECT * FROM toners WHERE id=?');
+            $e->execute([$editId]);
+            $edit = $e->fetch() ?: null;
+            if ($edit) {
+                $c = $db->prepare(
+                    'SELECT tc.id, ma.nombre marca, mo.nombre modelo
+                     FROM toner_compat tc JOIN marcas ma ON ma.id=tc.marca_id
+                     LEFT JOIN modelos mo ON mo.id=tc.modelo_id
+                     WHERE tc.toner_id=? ORDER BY ma.nombre, mo.nombre'
+                );
+                $c->execute([$editId]);
+                $compat = $c->fetchAll();
+            }
+        }
+        pagina('Tóners', vista('toners_list', [
+            'toners' => $st->fetchAll(), 'edit' => $edit, 'compat' => $compat,
+            'marcas' => $db->query('SELECT id, nombre FROM marcas WHERE activo=1 ORDER BY nombre COLLATE NOCASE')->fetchAll(),
+            'q' => $q, 'flash' => flash(),
+        ]));
+        break;
+
+    case 'toners.guardar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $db = db();
+        $id = (int)($_POST['id'] ?? 0);
+        $modelo = trim((string)($_POST['modelo'] ?? ''));
+        if ($modelo === '') { flash('El modelo del tóner es obligatorio.', 'error'); redir('toners'); }
+        $vals = [$modelo, trim((string)($_POST['color'] ?? '')), trim((string)($_POST['rendimiento'] ?? '')),
+                 (int)($_POST['stock'] ?? 0), trim((string)($_POST['nota'] ?? ''))];
+        try {
+            if ($id) {
+                $db->prepare('UPDATE toners SET modelo=?, color=?, rendimiento=?, stock=?, nota=? WHERE id=?')
+                   ->execute(array_merge($vals, [$id]));
+            } else {
+                $db->prepare('INSERT INTO toners (modelo,color,rendimiento,stock,nota) VALUES (?,?,?,?,?)')->execute($vals);
+                $id = (int)$db->lastInsertId();
+            }
+            auditar('toner', $id, $id ? 'guardar' : 'alta', $modelo);
+            flash('Tóner guardado.');
+        } catch (PDOException $e) {
+            flash(str_contains($e->getMessage(), 'UNIQUE') ? "Ya existe el tóner «{$modelo}»." : 'No se pudo guardar.', 'error');
+        }
+        redir('toners&id=' . $id);
+        break;
+
+    case 'toners.borrar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        db()->prepare('DELETE FROM toners WHERE id=?')->execute([(int)($_POST['id'] ?? 0)]);
+        flash('Tóner eliminado.');
+        redir('toners');
+        break;
+
+    case 'toners.compat_add':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $tid = (int)($_POST['toner_id'] ?? 0);
+        $marca = (int)($_POST['marca_id'] ?? 0);
+        $modelo = (int)($_POST['modelo_id'] ?? 0) ?: null;
+        if ($tid && $marca) {
+            try {
+                db()->prepare('INSERT INTO toner_compat (toner_id,marca_id,modelo_id) VALUES (?,?,?)')
+                    ->execute([$tid, $marca, $modelo]);
+            } catch (PDOException $e) { /* duplicado: ignorar */ }
+        } else {
+            flash('Elegí al menos la marca.', 'error');
+        }
+        redir('toners&id=' . $tid);
+        break;
+
+    case 'toners.compat_del':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        db()->prepare('DELETE FROM toner_compat WHERE id=?')->execute([(int)($_POST['id'] ?? 0)]);
+        redir('toners&id=' . (int)($_POST['toner_id'] ?? 0));
+        break;
+
+    // ---------- Usuarios ----------
+    case 'usuarios':
+        requiere_rol(ROL_ADMIN);
+        $db = db();
+        $editId = (int)($_GET['id'] ?? 0);
+        $edit = null;
+        if ($editId) {
+            $st = $db->prepare('SELECT id, usuario, nombre, rol, activo FROM usuarios WHERE id=?');
+            $st->execute([$editId]);
+            $edit = $st->fetch() ?: null;
+        }
+        pagina('Usuarios', vista('usuarios_list', [
+            'usuarios' => $db->query('SELECT id, usuario, nombre, rol, activo, creado FROM usuarios ORDER BY usuario COLLATE NOCASE')->fetchAll(),
+            'edit' => $edit, 'flash' => flash(),
+        ]));
+        break;
+
+    case 'usuarios.guardar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $db = db();
+        $id = (int)($_POST['id'] ?? 0);
+        $usuario = trim((string)($_POST['usuario'] ?? ''));
+        $nombre  = trim((string)($_POST['nombre'] ?? ''));
+        $rol     = in_array($_POST['rol'] ?? '', [ROL_ADMIN, ROL_TECNICO, ROL_LECTURA], true) ? $_POST['rol'] : ROL_LECTURA;
+        $activo  = isset($_POST['activo']) ? 1 : 0;
+        $clave   = (string)($_POST['clave'] ?? '');
+        $yo      = usuario_actual();
+        $adminsActivos = (int)$db->query("SELECT COUNT(*) FROM usuarios WHERE rol='" . ROL_ADMIN . "' AND activo=1")->fetchColumn();
+
+        if ($usuario === '') { flash('El usuario es obligatorio.', 'error'); redir('usuarios' . ($id ? '&id=' . $id : '')); }
+
+        if ($id) {
+            $st = $db->prepare('SELECT * FROM usuarios WHERE id=?');
+            $st->execute([$id]);
+            $actual = $st->fetch();
+            if (!$actual) { flash('Usuario inexistente.', 'error'); redir('usuarios'); }
+            // No quedarse sin admins activos
+            $eraAdminActivo = ($actual['rol'] === ROL_ADMIN && $actual['activo']);
+            if ($eraAdminActivo && ($rol !== ROL_ADMIN || !$activo) && $adminsActivos <= 1) {
+                flash('No podés dejar el sistema sin administradores activos.', 'error'); redir('usuarios&id=' . $id);
+            }
+            // No desactivarte a vos mismo
+            if ($id === (int)$yo['id'] && !$activo) {
+                flash('No podés desactivarte a vos mismo.', 'error'); redir('usuarios&id=' . $id);
+            }
+            try {
+                $db->prepare('UPDATE usuarios SET usuario=?, nombre=?, rol=?, activo=? WHERE id=?')
+                   ->execute([$usuario, $nombre, $rol, $activo, $id]);
+                if ($clave !== '') {
+                    $db->prepare('UPDATE usuarios SET hash_clave=? WHERE id=?')
+                       ->execute([password_hash($clave, PASSWORD_DEFAULT), $id]);
+                }
+                auditar('usuario', $id, 'modificación', $usuario . ($clave !== '' ? ' (cambió clave)' : ''));
+                flash('Usuario actualizado.');
+            } catch (PDOException $e) {
+                flash(str_contains($e->getMessage(), 'UNIQUE') ? "Ya existe el usuario «{$usuario}»." : 'No se pudo guardar.', 'error');
+                redir('usuarios&id=' . $id);
+            }
+        } else {
+            if (strlen($clave) < 4) { flash('La clave es obligatoria (mínimo 4 caracteres) para un usuario nuevo.', 'error'); redir('usuarios'); }
+            try {
+                $db->prepare('INSERT INTO usuarios (usuario, nombre, rol, activo, hash_clave) VALUES (?,?,?,?,?)')
+                   ->execute([$usuario, $nombre, $rol, $activo, password_hash($clave, PASSWORD_DEFAULT)]);
+                auditar('usuario', (int)$db->lastInsertId(), 'alta', $usuario);
+                flash('Usuario creado.');
+            } catch (PDOException $e) {
+                flash(str_contains($e->getMessage(), 'UNIQUE') ? "Ya existe el usuario «{$usuario}»." : 'No se pudo crear.', 'error');
+            }
+        }
+        redir('usuarios');
+        break;
+
+    case 'usuarios.borrar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $db = db();
+        $id = (int)($_POST['id'] ?? 0);
+        $yo = usuario_actual();
+        if ($id === (int)$yo['id']) { flash('No podés eliminarte a vos mismo.', 'error'); redir('usuarios'); }
+        $st = $db->prepare('SELECT * FROM usuarios WHERE id=?');
+        $st->execute([$id]);
+        $u = $st->fetch();
+        if ($u) {
+            $adminsActivos = (int)$db->query("SELECT COUNT(*) FROM usuarios WHERE rol='" . ROL_ADMIN . "' AND activo=1")->fetchColumn();
+            if ($u['rol'] === ROL_ADMIN && $u['activo'] && $adminsActivos <= 1) {
+                flash('No podés eliminar al último administrador activo.', 'error'); redir('usuarios');
+            }
+            $db->prepare('DELETE FROM usuarios WHERE id=?')->execute([$id]);
+            auditar('usuario', $id, 'baja', $u['usuario']);
+            flash('Usuario eliminado.');
+        }
+        redir('usuarios');
+        break;
+
     case 'areas':
         requiere_login();
-        $areas = db()->query('SELECT * FROM areas ORDER BY codigo')->fetchAll();
-        pagina('Reparticiones', vista('areas_list', ['areas' => $areas, 'flash' => flash()]));
+        $todas = db()->query('SELECT * FROM areas ORDER BY codigo')->fetchAll();
+        // Agrupar por secretaría = raíz del código (último segmento tras '#')
+        $titulos = [];
+        foreach ($todas as $a) {
+            $titulos[$a['codigo']] = $a['descripcion'];
+        }
+        $grupos = [];
+        foreach ($todas as $a) {
+            $partes = explode('#', $a['codigo']);
+            $raiz = trim((string)end($partes));
+            if (!isset($grupos[$raiz])) {
+                $grupos[$raiz] = ['codigo' => $raiz, 'titulo' => $titulos[$raiz] ?? $raiz,
+                                  'areas' => [], 'duplic' => 0];
+            }
+            $grupos[$raiz]['areas'][] = $a;
+            if ($a['duplicado']) {
+                $grupos[$raiz]['duplic']++;
+            }
+        }
+        // INT (Intendencia) primero; luego alfabético por raíz
+        uksort($grupos, fn($x, $y) => $x === 'INT' ? -1 : ($y === 'INT' ? 1 : strcmp($x, $y)));
+        $sec = trim((string)($_GET['sec'] ?? ''));
+        pagina('Reparticiones', vista('areas_list', ['grupos' => $grupos, 'sec' => $sec, 'flash' => flash()]));
+        break;
+
+    case 'areas.nueva':
+    case 'areas.editar':
+        requiere_rol(ROL_ADMIN);
+        $db = db();
+        $area = null;
+        if ($r === 'areas.editar') {
+            $st = $db->prepare('SELECT * FROM areas WHERE id=?');
+            $st->execute([(int)($_GET['id'] ?? 0)]);
+            $area = $st->fetch();
+            if (!$area) { http_response_code(404); pagina('No encontrado', '<p>Repartición inexistente.</p>'); break; }
+        }
+        $padres = $db->query('SELECT codigo, descripcion FROM areas ORDER BY codigo')->fetchAll();
+        $secretarias = $db->query(
+            "SELECT codigo, descripcion FROM areas WHERE codigo NOT LIKE '%#%' ORDER BY descripcion"
+        )->fetchAll();
+        pagina($area ? 'Editar repartición' : 'Nueva repartición',
+            vista('area_form', ['area' => $area, 'padres' => $padres, 'secretarias' => $secretarias, 'flash' => flash()]));
+        break;
+
+    case 'areas.crear':
+    case 'areas.actualizar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $db = db();
+        $editar = ($r === 'areas.actualizar');
+        $id = (int)($_POST['id'] ?? 0);
+        $volver = $editar ? 'areas.editar&id=' . $id : 'areas.nueva';
+
+        $nivel = ($_POST['nivel'] ?? 'dependencia') === 'secretaria' ? 'secretaria' : 'dependencia';
+        $abrev = strtoupper(trim($_POST['abreviatura'] ?? ''));
+        $desc  = trim($_POST['descripcion'] ?? '');
+
+        if ($desc === '') {
+            flash('La descripción es obligatoria.', 'error'); redir($volver);
+        }
+        if (!preg_match('/^[A-Z]{1,4}$/', $abrev)) {
+            flash('La abreviatura debe ser de 1 a 4 letras (sin números ni símbolos).', 'error'); redir($volver);
+        }
+
+        if ($nivel === 'secretaria') {
+            $codigo = $abrev;
+            $padre  = '';
+            $estructura = trim($_POST['estructura'] ?? '') ?: 'Secretaría';
+        } else {
+            $padre = strtoupper(trim($_POST['secretaria'] ?? ''));
+            if ($padre === '') {
+                flash('Elegí la secretaría a la que pertenece la dependencia.', 'error'); redir($volver);
+            }
+            $codigo = $abrev . '#' . $padre;
+            $estructura = trim($_POST['estructura'] ?? '') ?: 'Dirección';
+        }
+
+        // Unicidad del código (salvo el mismo registro al editar)
+        $chk = $db->prepare('SELECT COUNT(*) FROM areas WHERE codigo=? AND id<>?');
+        $chk->execute([$codigo, $id]);
+        if ($chk->fetchColumn() > 0) {
+            flash("Ya existe una repartición con el código «{$codigo}».", 'error'); redir($volver);
+        }
+
+        $campos = [
+            'codigo'       => $codigo,
+            'descripcion'  => $desc,
+            'estructura'   => $estructura,
+            'codigo_padre' => $padre,
+            'abreviatura'  => $abrev,
+            'ubicacion'    => trim($_POST['ubicacion'] ?? ''),
+            'activa'       => isset($_POST['activa']) ? 1 : 0,
+        ];
+        if ($editar) {
+            $set = implode(', ', array_map(fn($c) => "$c=?", array_keys($campos)));
+            $args = array_values($campos);
+            $args[] = $id;
+            $db->prepare("UPDATE areas SET $set WHERE id=?")->execute($args);
+            auditar('area', $id, 'modificación', $codigo);
+            flash('Repartición actualizada.');
+        } else {
+            $cols = implode(',', array_keys($campos));
+            $ph = implode(',', array_fill(0, count($campos), '?'));
+            $db->prepare("INSERT INTO areas ($cols) VALUES ($ph)")->execute(array_values($campos));
+            $id = (int)$db->lastInsertId();
+            auditar('area', $id, 'alta', $codigo);
+            flash('Repartición creada.');
+        }
+        redir('areas&sec=' . urlencode($nivel === 'secretaria' ? $codigo : $padre));
         break;
 
     // ---------- Equipos ----------
@@ -93,14 +518,179 @@ switch ($r) {
         break;
 
     case 'equipos.nuevo':
+    case 'equipos.editar':
         requiere_rol(ROL_TECNICO);
         $db = db();
+        $eq = null;
+        if ($r === 'equipos.editar') {
+            $st = $db->prepare('SELECT * FROM equipos WHERE id=?');
+            $st->execute([(int)($_GET['id'] ?? 0)]);
+            $eq = $st->fetch();
+            if (!$eq) { http_response_code(404); pagina('No encontrado', '<p>Equipo inexistente.</p>'); break; }
+        }
+        // Recupera datos del formulario si hubo error de validación
+        $old = $_SESSION['form_old'] ?? null;
+        unset($_SESSION['form_old']);
         $areas  = $db->query('SELECT id, codigo, descripcion FROM areas WHERE activa=1 ORDER BY codigo')->fetchAll();
         $tipos  = $db->query('SELECT * FROM tipos_equipo WHERE activo=1 ORDER BY nombre_es')->fetchAll();
         $estados = $db->query('SELECT * FROM estados WHERE activo=1 ORDER BY id')->fetchAll();
-        pagina('Nuevo equipo', vista('equipo_form', [
-            'areas' => $areas, 'tipos' => $tipos, 'estados' => $estados, 'flash' => flash(),
+        pagina($eq ? 'Editar equipo' : 'Nuevo equipo', vista('equipo_form', [
+            'eq' => $eq, 'old' => $old, 'areas' => $areas, 'tipos' => $tipos,
+            'estados' => $estados, 'flash' => flash(),
+            'componentes' => $eq ? componentes_de((int)$eq['id']) : [],
+            'valores'     => $eq ? valores_de((int)$eq['id']) : [],
+            'atrMapa'     => atributos_mapa(),
+            'tiposComp'   => $db->query('SELECT nombre FROM tipos_componente WHERE activo=1 ORDER BY nombre')->fetchAll(PDO::FETCH_COLUMN),
+            'catMarca'    => cat_union(['marca', 'comp_marca']),
+            'catModelo'   => cat_union(['modelo', 'comp_modelo']),
         ]));
+        break;
+
+    case 'equipos.lote': // carga por lote: un área, varios equipos
+        requiere_rol(ROL_TECNICO);
+        $db = db();
+        pagina('Carga por lote', vista('equipo_lote', [
+            'areas'   => $db->query('SELECT id, codigo, descripcion FROM areas WHERE activa=1 ORDER BY codigo')->fetchAll(),
+            'tipos'   => $db->query('SELECT * FROM tipos_equipo WHERE activo=1 ORDER BY nombre_es')->fetchAll(),
+            'estados' => $db->query('SELECT * FROM estados WHERE activo=1 ORDER BY id')->fetchAll(),
+            'atrMapa' => atributos_mapa(),
+            'tiposComp' => $db->query('SELECT nombre FROM tipos_componente WHERE activo=1 ORDER BY nombre')->fetchAll(PDO::FETCH_COLUMN),
+            'catMarca'  => cat_union(['marca', 'comp_marca']),
+            'catModelo' => cat_union(['modelo', 'comp_modelo']),
+            'flash' => flash(),
+        ]));
+        break;
+
+    case 'componentes.analizar': // AJAX: parseo de reporte CPU-Z/HWMonitor
+        requiere_rol(ROL_TECNICO);
+        header('Content-Type: application/json');
+        require_once __DIR__ . '/lib/cpuz.php';
+        $out = ['componentes' => [], 'avisos' => []];
+        if (!empty($_FILES['reporte']['tmp_name']) && is_uploaded_file($_FILES['reporte']['tmp_name'])) {
+            if ((int)$_FILES['reporte']['size'] > 2_000_000) {
+                $out['avisos'][] = 'Archivo demasiado grande (máx. 2 MB).';
+            } else {
+                $out = cpuz_parsear((string)file_get_contents($_FILES['reporte']['tmp_name']));
+            }
+        } else {
+            $out['avisos'][] = 'No se recibió ningún archivo.';
+        }
+        echo json_encode($out, JSON_UNESCAPED_UNICODE);
+        break;
+
+    // ---------- Agente de hardware (script de los usuarios) ----------
+    case 'agente.recibir': // recibe el reporte por HTTP con token (sin login)
+        header('Content-Type: text/plain; charset=utf-8');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405); exit("Usar POST.\n");
+        }
+        $token = $_GET['token'] ?? ($_SERVER['HTTP_X_NOMINATOR_TOKEN'] ?? '');
+        if (!hash_equals(AGENTE_TOKEN, (string)$token)) {
+            http_response_code(403); exit("Token inválido.\n");
+        }
+        $cuerpo = (string)file_get_contents('php://input');
+        if ($cuerpo === '' && !empty($_FILES['reporte']['tmp_name'])) {
+            $cuerpo = (string)file_get_contents($_FILES['reporte']['tmp_name']);
+        }
+        if (strlen($cuerpo) < 10) { http_response_code(400); exit("Reporte vacío.\n"); }
+        if (strlen($cuerpo) > 2_000_000) { http_response_code(413); exit("Reporte demasiado grande.\n"); }
+
+        require_once __DIR__ . '/lib/cpuz.php';
+        $p = cpuz_parsear($cuerpo);
+        $host = $usr = '';
+        if (preg_match('/Computer Name[\t ]+(.+)/i', $cuerpo, $m)) { $host = trim($m[1]); }
+        if (preg_match('/(?:^|\n)[\t ]*User[\t ]+(.+)/i', $cuerpo, $m)) { $usr = trim($m[1]); }
+        $resumen = implode(' · ', array_map(fn($c) => $c['tipo'] . ' ' . $c['modelo'], $p['componentes']));
+        db()->prepare(
+            'INSERT INTO reportes_pendientes (origen_host,origen_usuario,origen_ip,n_componentes,resumen,contenido)
+             VALUES (?,?,?,?,?,?)'
+        )->execute([$host, $usr, $_SERVER['REMOTE_ADDR'] ?? '', count($p['componentes']), $resumen, $cuerpo]);
+        echo "OK: reporte recibido (" . count($p['componentes']) . " componentes). ¡Gracias!\n";
+        break;
+
+    case 'reportes': // bandeja de reportes pendientes
+        requiere_rol(ROL_TECNICO);
+        $rows = db()->query('SELECT * FROM reportes_pendientes WHERE procesado=0 ORDER BY recibido DESC')->fetchAll();
+        pagina('Reportes de hardware', vista('reportes_list', ['reportes' => $rows, 'flash' => flash()]));
+        break;
+
+    case 'reportes.ver':
+        requiere_rol(ROL_TECNICO);
+        require_once __DIR__ . '/lib/cpuz.php';
+        $db = db();
+        $st = $db->prepare('SELECT * FROM reportes_pendientes WHERE id=?');
+        $st->execute([(int)($_GET['id'] ?? 0)]);
+        $rep = $st->fetch();
+        if (!$rep) { http_response_code(404); pagina('No encontrado', '<p>Reporte inexistente.</p>'); break; }
+        $comp = cpuz_parsear($rep['contenido'])['componentes'];
+        pagina('Reporte de ' . ($rep['origen_host'] ?: ('#' . $rep['id'])), vista('reporte_ver', [
+            'rep' => $rep, 'comp' => $comp,
+            'areas' => $db->query('SELECT id, codigo, descripcion FROM areas WHERE activa=1 ORDER BY codigo')->fetchAll(),
+            'tipos' => $db->query('SELECT * FROM tipos_equipo WHERE activo=1 ORDER BY nombre_es')->fetchAll(),
+            'estados' => $db->query('SELECT * FROM estados WHERE activo=1 ORDER BY id')->fetchAll(),
+            'flash' => flash(),
+        ]));
+        break;
+
+    case 'reportes.procesar': // crear equipo desde un reporte pendiente
+        requiere_rol(ROL_TECNICO);
+        csrf_check();
+        require_once __DIR__ . '/lib/cpuz.php';
+        $db = db();
+        $repId = (int)($_POST['reporte_id'] ?? 0);
+        $st = $db->prepare('SELECT * FROM reportes_pendientes WHERE id=?');
+        $st->execute([$repId]);
+        $rep = $st->fetch();
+        if (!$rep || $rep['procesado']) { flash('Reporte inexistente o ya procesado.', 'error'); redir('reportes'); }
+
+        $tipoId = (int)($_POST['tipo_id'] ?? 0);
+        $areaId = (int)($_POST['area_id'] ?? 0);
+        $tipo = $db->query('SELECT * FROM tipos_equipo WHERE id=' . $tipoId)->fetch();
+        $area = $areaId ? $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch() : null;
+        if (!$tipo || !$area) { flash('Elegí área y tipo.', 'error'); redir('reportes.ver&id=' . $repId); }
+
+        $resH = nm_resolver_hostname($db, $tipo, $area, $_POST['hostname'] ?? '', null);
+        if ($resH['errores']) { flash(implode(' ', $resH['errores']), 'error'); redir('reportes.ver&id=' . $repId); }
+
+        $rp = cpuz_parsear($rep['contenido']);
+        $campos = [
+            'id_patrimonial' => trim($_POST['id_patrimonial'] ?? '') ?: null,
+            'hostname'    => $resH['hostname'],
+            'tipo_id'     => $tipoId,
+            'area_id'     => $areaId,
+            'estado_id'   => (int)($_POST['estado_id'] ?? 0) ?: null,
+            'titularidad' => 'Municipal',
+            'tenencia'    => 'En sede',
+            'marca'       => $rp['sistema']['marca'] ?: null,
+            'modelo'      => $rp['sistema']['modelo'] ?: null,
+            'anydesk_id'  => $rp['anydesk'] ?: null,
+            'observaciones' => trim('Alta desde reporte del agente. Origen: '
+                . ($rep['origen_host'] ?: '?') . ' / ' . ($rep['origen_usuario'] ?: '?')),
+            'correlativo' => $resH['correlativo'],
+        ];
+        $cols = implode(',', array_keys($campos));
+        $ph = implode(',', array_fill(0, count($campos), '?'));
+        $db->prepare("INSERT INTO equipos ($cols) VALUES ($ph)")->execute(array_values($campos));
+        $id = (int)$db->lastInsertId();
+
+        // Componentes desde el reporte
+        $parsed = $rp['componentes'];
+        $datos = ['comp_tipo' => [], 'comp_marca' => [], 'comp_modelo' => [],
+                  'comp_serie' => [], 'comp_velocidad' => [], 'comp_memoria' => [], 'comp_bus' => []];
+        foreach ($parsed as $c) {
+            $datos['comp_tipo'][] = $c['tipo'];
+            $datos['comp_marca'][] = $c['marca'];
+            $datos['comp_modelo'][] = $c['modelo'];
+            $datos['comp_serie'][] = $c['n_serie'];
+            $datos['comp_velocidad'][] = $c['velocidad'];
+            $datos['comp_memoria'][] = $c['memoria'];
+            $datos['comp_bus'][] = $c['bus'];
+        }
+        guardar_componentes($db, $id, $datos);
+        $db->prepare('UPDATE reportes_pendientes SET procesado=1, equipo_id=? WHERE id=?')->execute([$id, $repId]);
+        auditar('reporte', $repId, 'procesado', 'equipo ' . $id);
+        flash('Equipo creado desde el reporte' . ($resH['hostname'] ? " como «{$resH['hostname']}»." : '.'));
+        redir('equipos.ver&id=' . $id);
         break;
 
     case 'equipos.preview': // AJAX: previsualización del hostname
@@ -113,9 +703,7 @@ switch ($r) {
         $area = $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch();
         $tipo = $db->query('SELECT * FROM tipos_equipo WHERE id=' . $tipoId)->fetch();
         if (!$area || !$tipo) {
-            $resp['error'] = 'Seleccioná área y tipo.';
-        } elseif (!$tipo['lleva_hostname']) {
-            $resp['error'] = 'Este tipo (' . $tipo['nombre_es'] . ') no lleva hostname; se asocia a un equipo padre.';
+            $resp['error'] = 'Seleccioná repartición y tipo.';
         } else {
             $corr = nm_proximo_correlativo($db, $areaId, $tipoId);
             $gen = nm_generar_hostname(nm_token_area($area['codigo']), $tipo['codigo'], $corr);
@@ -129,42 +717,141 @@ switch ($r) {
         break;
 
     case 'equipos.crear':
+    case 'equipos.actualizar':
         requiere_rol(ROL_TECNICO);
         csrf_check();
         $db = db();
+        $editar = ($r === 'equipos.actualizar');
+        $id = (int)($_POST['id'] ?? 0);
         $tipoId = (int)$_POST['tipo_id'];
         $areaId = (int)$_POST['area_id'];
         $tipo = $db->query('SELECT * FROM tipos_equipo WHERE id=' . $tipoId)->fetch();
-        $area = $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch();
+        $area = $areaId ? $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch() : null;
 
-        $hostname = null;
-        $corr = null;
-        if ($tipo && $area && $tipo['lleva_hostname']) {
-            $corr = nm_proximo_correlativo($db, $areaId, $tipoId);
-            $gen = nm_generar_hostname(nm_token_area($area['codigo']), $tipo['codigo'], $corr);
-            $hostname = $gen['hostname'];
+        if (!$tipo) {
+            flash('Seleccioná un tipo de equipo válido.', 'error');
+            redir($editar ? 'equipos.editar&id=' . $id : 'equipos.nuevo');
         }
 
-        $db->prepare(
-            'INSERT INTO equipos
-             (id_patrimonial, hostname, tipo_id, area_id, estado_id, correlativo,
-              marca, modelo, n_serie, n_parte, ip, titularidad, tenencia, tenedor,
-              responsable, observaciones, notas_tecnicas)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-        )->execute([
-            trim($_POST['id_patrimonial'] ?? '') ?: null,
-            $hostname, $tipoId, $areaId, (int)$_POST['estado_id'] ?: null, $corr,
-            trim($_POST['marca'] ?? ''), trim($_POST['modelo'] ?? ''),
-            trim($_POST['n_serie'] ?? ''), trim($_POST['n_parte'] ?? ''),
-            trim($_POST['ip'] ?? ''),
-            $_POST['titularidad'] ?? 'Municipal', $_POST['tenencia'] ?? 'En sede',
-            trim($_POST['tenedor'] ?? ''), trim($_POST['responsable'] ?? ''),
-            trim($_POST['observaciones'] ?? ''), trim($_POST['notas_tecnicas'] ?? ''),
-        ]);
-        $id = (int)$db->lastInsertId();
-        auditar('equipo', $id, 'alta', $hostname ?? ('id_patrimonial ' . ($_POST['id_patrimonial'] ?? '')));
-        flash('Equipo creado' . ($hostname ? " como «{$hostname}»." : '.'));
+        // Hostname editable: vacío = recomendación automática; cargado = se respeta y valida.
+        $res = nm_resolver_hostname($db, $tipo, $area, $_POST['hostname'] ?? '', $editar ? $id : null);
+        if ($res['errores']) {
+            $_SESSION['form_old'] = $_POST;
+            flash(implode(' ', $res['errores']), 'error');
+            redir($editar ? 'equipos.editar&id=' . $id : 'equipos.nuevo');
+        }
+        $hostname = $res['hostname'];
+
+        $campos = [
+            'id_patrimonial' => trim($_POST['id_patrimonial'] ?? '') ?: null,
+            'hostname'    => $hostname,
+            'tipo_id'     => $tipoId,
+            'area_id'     => $areaId ?: null,
+            'estado_id'   => (int)($_POST['estado_id'] ?? 0) ?: null,
+            'marca'       => trim($_POST['marca'] ?? ''),
+            'modelo'      => trim($_POST['modelo'] ?? ''),
+            'n_serie'     => trim($_POST['n_serie'] ?? ''),
+            'n_parte'     => trim($_POST['n_parte'] ?? ''),
+            'ip'          => trim($_POST['ip'] ?? ''),
+            'titularidad' => $_POST['titularidad'] ?? 'Municipal',
+            'tenencia'    => $_POST['tenencia'] ?? 'En sede',
+            'tenedor'     => trim($_POST['tenedor'] ?? ''),
+            'responsable' => trim($_POST['responsable'] ?? ''),
+            'observaciones' => trim($_POST['observaciones'] ?? ''),
+            'notas_tecnicas' => trim($_POST['notas_tecnicas'] ?? ''),
+            'anydesk_id'  => trim($_POST['anydesk_id'] ?? '') ?: null,
+        ];
+        // La clave remota de AnyDesk sólo la puede cargar/cambiar el admin.
+        // Si no es admin, no se incluye la columna y se preserva el valor existente.
+        if (puede(ROL_ADMIN)) {
+            $campos['anydesk_clave'] = trim($_POST['anydesk_clave'] ?? '') ?: null;
+        }
+
+        if ($editar) {
+            $set = implode(', ', array_map(fn($c) => "$c=?", array_keys($campos)));
+            $args = array_values($campos);
+            $args[] = $id;
+            $db->prepare("UPDATE equipos SET $set, actualizado=datetime('now','localtime') WHERE id=?")
+               ->execute($args);
+            auditar('equipo', $id, 'modificación', (string)$hostname);
+            flash('Equipo actualizado.');
+        } else {
+            $campos['correlativo'] = $res['correlativo'];
+            $cols = implode(',', array_keys($campos));
+            $ph = implode(',', array_fill(0, count($campos), '?'));
+            $db->prepare("INSERT INTO equipos ($cols) VALUES ($ph)")->execute(array_values($campos));
+            $id = (int)$db->lastInsertId();
+            auditar('equipo', $id, 'alta', $hostname ?? ('patrimonial ' . ($campos['id_patrimonial'] ?? '')));
+            flash('Equipo creado' . ($hostname ? " como «{$hostname}»." : '.'));
+        }
+        // Catálogo, componentes y atributos dinámicos
+        cat_add('marca', $campos['marca']);
+        cat_add('modelo', $campos['modelo']);
+        guardar_componentes($db, $id, $_POST);
+        guardar_atributos($db, $id, $tipoId, $_POST['attr'] ?? []);
         redir('equipos.ver&id=' . $id);
+        break;
+
+    case 'equipos.lote_guardar':
+        requiere_rol(ROL_TECNICO);
+        csrf_check();
+        $db = db();
+        $areaId = (int)($_POST['area_id'] ?? 0);
+        $area = $areaId ? $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch() : null;
+        if (!$area) {
+            flash('Elegí un área para la carga por lote.', 'error');
+            redir('equipos.lote');
+        }
+        $filas = $_POST['eq'] ?? [];
+        $creados = 0;
+        $errores = [];
+        foreach ((array)$filas as $idx => $f) {
+            $tipoId = (int)($f['tipo_id'] ?? 0);
+            if (!$tipoId) {
+                continue; // fila sin tipo: se ignora
+            }
+            $tipo = $db->query('SELECT * FROM tipos_equipo WHERE id=' . $tipoId)->fetch();
+            if (!$tipo) {
+                continue;
+            }
+            $res = nm_resolver_hostname($db, $tipo, $area, $f['hostname'] ?? '', null);
+            if ($res['errores']) {
+                $errores[] = 'Equipo #' . ($idx + 1) . ': ' . implode(' ', $res['errores']);
+                continue;
+            }
+            $campos = [
+                'id_patrimonial' => trim($f['id_patrimonial'] ?? '') ?: null,
+                'hostname'    => $res['hostname'],
+                'tipo_id'     => $tipoId,
+                'area_id'     => $areaId,
+                'estado_id'   => (int)($f['estado_id'] ?? 0) ?: null,
+                'correlativo' => $res['correlativo'],
+                'marca'       => trim($f['marca'] ?? ''),
+                'modelo'      => trim($f['modelo'] ?? ''),
+                'n_serie'     => trim($f['n_serie'] ?? ''),
+                'n_parte'     => trim($f['n_parte'] ?? ''),
+                'ip'          => trim($f['ip'] ?? ''),
+                'titularidad' => $f['titularidad'] ?? 'Municipal',
+                'tenencia'    => $f['tenencia'] ?? 'En sede',
+                'tenedor'     => trim($f['tenedor'] ?? ''),
+                'responsable' => trim($f['responsable'] ?? ''),
+                'observaciones' => trim($f['observaciones'] ?? ''),
+            ];
+            $cols = implode(',', array_keys($campos));
+            $ph = implode(',', array_fill(0, count($campos), '?'));
+            $db->prepare("INSERT INTO equipos ($cols) VALUES ($ph)")->execute(array_values($campos));
+            $id = (int)$db->lastInsertId();
+            cat_add('marca', $campos['marca']);
+            cat_add('modelo', $campos['modelo']);
+            guardar_componentes($db, $id, $f);
+            guardar_atributos($db, $id, $tipoId, $f['attr'] ?? []);
+            auditar('equipo', $id, 'alta (lote)', (string)$campos['hostname']);
+            $creados++;
+        }
+        $msg = ($creados ? "$creados equipo(s) creado(s) en {$area['descripcion']}. " : '')
+             . ($errores ? 'No se cargaron: ' . implode(' | ', $errores) : '');
+        flash($msg ?: 'No se cargó ningún equipo.', $errores ? 'error' : 'ok');
+        redir('equipos&area=' . $areaId);
         break;
 
     case 'equipos.ver':
@@ -186,10 +873,9 @@ switch ($r) {
             pagina('No encontrado', '<p>Equipo inexistente.</p>');
             break;
         }
-        $comp = $db->prepare('SELECT * FROM componentes WHERE equipo_id=?');
-        $comp->execute([$id]);
         pagina('Equipo ' . ($eq['hostname'] ?? $eq['id']), vista('equipo_show', [
-            'eq' => $eq, 'componentes' => $comp->fetchAll(), 'flash' => flash(),
+            'eq' => $eq, 'componentes' => componentes_de($id),
+            'atributos' => valores_legibles($id), 'flash' => flash(),
         ]));
         break;
 
@@ -207,9 +893,27 @@ switch ($r) {
         $st->execute([$id]);
         $eq = $st->fetch();
         if (!$eq) { http_response_code(404); exit('Equipo inexistente.'); }
-        $comp = $db->prepare('SELECT * FROM componentes WHERE equipo_id=?');
-        $comp->execute([$id]);
-        reporte('Ficha de hardware', vista('rep_ficha', ['eq' => $eq, 'componentes' => $comp->fetchAll()]));
+        reporte('Ficha de hardware', vista('rep_ficha', [
+            'eq' => $eq, 'componentes' => componentes_de($id), 'atributos' => valores_legibles($id),
+        ]));
+        break;
+
+    case 'reporte.area_opciones': // elegir qué tipos incluir en el extracto
+        requiere_login();
+        $db = db();
+        $areaId = (int)($_GET['area'] ?? 0);
+        $area = $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch();
+        if (!$area) { http_response_code(404); pagina('No encontrado', '<p>Área inexistente.</p>'); break; }
+        $st = $db->prepare(
+            "SELECT t.id, t.nombre_es, COUNT(e.id) n
+             FROM tipos_equipo t
+             JOIN equipos e ON e.tipo_id=t.id AND e.area_id=? AND e.titularidad='Municipal'
+                            AND COALESCE(e.baja_fecha,'')=''
+             GROUP BY t.id ORDER BY t.nombre_es"
+        );
+        $st->execute([$areaId]);
+        pagina('Extracto de ' . $area['descripcion'],
+            vista('rep_area_opciones', ['area' => $area, 'tipos' => $st->fetchAll()]));
         break;
 
     case 'reporte.area': // extracto para declaración de inventario
@@ -218,13 +922,18 @@ switch ($r) {
         $areaId = (int)($_GET['area'] ?? 0);
         $area = $db->query('SELECT * FROM areas WHERE id=' . $areaId)->fetch();
         if (!$area) { http_response_code(404); exit('Área inexistente.'); }
-        $st = $db->prepare(
-            "SELECT e.*, t.nombre_es tnom FROM equipos e JOIN tipos_equipo t ON t.id=e.tipo_id
-             WHERE e.area_id=? AND e.titularidad='Municipal'
-               AND COALESCE(e.baja_fecha,'')=''
-             ORDER BY t.nombre_es, e.correlativo"
-        );
-        $st->execute([$areaId]);
+        // Filtro opcional de tipos (configurable por reporte).
+        $tiposSel = array_values(array_filter(array_map('intval', (array)($_GET['tipos'] ?? []))));
+        $sql = "SELECT e.*, t.nombre_es tnom FROM equipos e JOIN tipos_equipo t ON t.id=e.tipo_id
+                WHERE e.area_id=? AND e.titularidad='Municipal' AND COALESCE(e.baja_fecha,'')=''";
+        $args = [$areaId];
+        if ($tiposSel) {
+            $sql .= ' AND e.tipo_id IN (' . implode(',', array_fill(0, count($tiposSel), '?')) . ')';
+            $args = array_merge($args, $tiposSel);
+        }
+        $sql .= ' ORDER BY t.nombre_es, e.correlativo';
+        $st = $db->prepare($sql);
+        $st->execute($args);
         reporte('Extracto de inventario', vista('rep_area', ['area' => $area, 'equipos' => $st->fetchAll()]));
         break;
 

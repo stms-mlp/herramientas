@@ -3,20 +3,35 @@
   <h2 class="rep-sub">Ficha de hardware</h2>
 
   <table class="rep-tabla">
-    <tr><th>Hostname</th><td class="mono"><?= h($eq['hostname'] ?: '—') ?></td>
+    <tr><th>Nombre de dispositivo</th><td class="mono"><?= h($eq['hostname'] ?: '—') ?></td>
         <th>ID patrimonial</th><td><?= h($eq['id_patrimonial'] ?: '—') ?></td></tr>
     <tr><th>Tipo</th><td><?= h($eq['tnom']) ?></td>
         <th>Estado</th><td><?= h($eq['enom']) ?></td></tr>
     <tr><th>Repartición</th><td colspan="3"><?= h($eq['acod']) ?> — <?= h($eq['adesc']) ?></td></tr>
-    <tr><th>Marca / Modelo</th><td><?= h(trim(($eq['marca'] ?? '').' '.($eq['modelo'] ?? ''))) ?></td>
+    <tr><th>Marca / Modelo</th><td><?= h(nombre_equipo($eq)) ?></td>
         <th>N° de serie</th><td><?= h($eq['n_serie'] ?: '—') ?></td></tr>
     <tr><th>IP</th><td class="mono"><?= h($eq['ip'] ?: '—') ?></td>
         <th>Titularidad</th><td><?= h($eq['titularidad']) ?></td></tr>
     <tr><th>Tenencia</th><td><?= h($eq['tenencia']) ?></td>
         <th>Responsable</th><td><?= h($eq['responsable'] ?: '—') ?></td></tr>
+    <?php if (!empty($eq['anydesk_id'])): ?>
+      <tr><th>AnyDesk</th><td colspan="3" class="mono"><?= h($eq['anydesk_id']) ?></td></tr>
+    <?php endif; ?>
   </table>
 
+  <?php if (!empty($atributos)): ?>
+    <h3 class="rep-sub">Ficha del tipo</h3>
+    <table class="rep-tabla">
+      <?php foreach ($atributos as $a): ?>
+        <tr><th><?= h($a['nombre']) ?></th><td><?= h($a['valor']) ?></td></tr>
+      <?php endforeach; ?>
+    </table>
+  <?php endif; ?>
+
   <h3 class="rep-sub">Componentes</h3>
+  <?php $resHw = resumen_hardware((int)$eq['id']); if ($resHw): ?>
+    <p class="rep-resumen"><strong>Resumen:</strong> <?= h($resHw) ?></p>
+  <?php endif; ?>
   <?php if (!$componentes): ?>
     <p>Sin componentes registrados.</p>
   <?php else: ?>
