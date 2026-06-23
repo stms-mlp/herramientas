@@ -19,7 +19,10 @@
     <label>Clave<input type="password" name="clave" required></label>
     <button type="submit">Ingresar</button>
   </form>
-  <p class="nota">Acceso inicial: <code>admin / admin</code> — cambialo luego.</p>
+  <p class="nota">
+    <a href="agente/Reportar-Hardware.bat" download class="agente-dl">⬇ Descargar agente de hardware</a>
+  </p>
+  <p class="nota tenue">Relevá esta PC y envialo al inventario (doble clic).</p>
 </div>
 </body>
 </html>
