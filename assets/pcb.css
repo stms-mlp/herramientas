@@ -141,6 +141,9 @@ button,.btn,.btn-sec{
   color:#1a1208; font-weight:700; letter-spacing:.04em; display:inline-block;
 }
 .btn-sec{ background:transparent; color:var(--cyan); border-color:var(--cyan); }
+.btn-del{ background:transparent; color:var(--rojo); border:1px solid var(--rojo); font-family:var(--mono);
+  cursor:pointer; padding:.5rem .9rem; border-radius:6px; font-weight:700; }
+.btn-del:hover{ background:rgba(255,107,107,.12); }
 button:hover,.btn:hover{ filter:brightness(1.08); text-decoration:none; }
 
 .acciones,.acciones-top{ display:flex; gap:.8rem; margin:1rem 0; align-items:center; }

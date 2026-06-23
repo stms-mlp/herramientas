@@ -5,6 +5,12 @@
   <?php endif; ?>
   <a class="btn" href="?r=reporte.ficha&id=<?= (int)$eq['id'] ?>" target="_blank">📄 Ficha de hardware</a>
   <a class="btn-sec" href="?r=equipos">Volver</a>
+  <?php if (puede(ROL_ADMIN)): ?>
+    <button type="button" class="btn-del" onclick="if(confirm('¿Eliminar definitivamente el equipo «<?= h($eq['hostname'] ?: ('#'.$eq['id'])) ?>» y todos sus componentes/datos asociados?')) document.getElementById('delEq').submit();">🗑 Eliminar</button>
+    <form id="delEq" method="post" action="?r=equipos.borrar" style="display:none">
+      <?= csrf_input() ?><input type="hidden" name="id" value="<?= (int)$eq['id'] ?>">
+    </form>
+  <?php endif; ?>
 </div>
 
 <div class="ficha">
