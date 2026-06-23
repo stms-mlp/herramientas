@@ -284,6 +284,101 @@ switch ($r) {
         redir('toners&id=' . (int)($_POST['toner_id'] ?? 0));
         break;
 
+    // ---------- Usuarios ----------
+    case 'usuarios':
+        requiere_rol(ROL_ADMIN);
+        $db = db();
+        $editId = (int)($_GET['id'] ?? 0);
+        $edit = null;
+        if ($editId) {
+            $st = $db->prepare('SELECT id, usuario, nombre, rol, activo FROM usuarios WHERE id=?');
+            $st->execute([$editId]);
+            $edit = $st->fetch() ?: null;
+        }
+        pagina('Usuarios', vista('usuarios_list', [
+            'usuarios' => $db->query('SELECT id, usuario, nombre, rol, activo, creado FROM usuarios ORDER BY usuario COLLATE NOCASE')->fetchAll(),
+            'edit' => $edit, 'flash' => flash(),
+        ]));
+        break;
+
+    case 'usuarios.guardar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $db = db();
+        $id = (int)($_POST['id'] ?? 0);
+        $usuario = trim((string)($_POST['usuario'] ?? ''));
+        $nombre  = trim((string)($_POST['nombre'] ?? ''));
+        $rol     = in_array($_POST['rol'] ?? '', [ROL_ADMIN, ROL_TECNICO, ROL_LECTURA], true) ? $_POST['rol'] : ROL_LECTURA;
+        $activo  = isset($_POST['activo']) ? 1 : 0;
+        $clave   = (string)($_POST['clave'] ?? '');
+        $yo      = usuario_actual();
+        $adminsActivos = (int)$db->query("SELECT COUNT(*) FROM usuarios WHERE rol='" . ROL_ADMIN . "' AND activo=1")->fetchColumn();
+
+        if ($usuario === '') { flash('El usuario es obligatorio.', 'error'); redir('usuarios' . ($id ? '&id=' . $id : '')); }
+
+        if ($id) {
+            $st = $db->prepare('SELECT * FROM usuarios WHERE id=?');
+            $st->execute([$id]);
+            $actual = $st->fetch();
+            if (!$actual) { flash('Usuario inexistente.', 'error'); redir('usuarios'); }
+            // No quedarse sin admins activos
+            $eraAdminActivo = ($actual['rol'] === ROL_ADMIN && $actual['activo']);
+            if ($eraAdminActivo && ($rol !== ROL_ADMIN || !$activo) && $adminsActivos <= 1) {
+                flash('No podés dejar el sistema sin administradores activos.', 'error'); redir('usuarios&id=' . $id);
+            }
+            // No desactivarte a vos mismo
+            if ($id === (int)$yo['id'] && !$activo) {
+                flash('No podés desactivarte a vos mismo.', 'error'); redir('usuarios&id=' . $id);
+            }
+            try {
+                $db->prepare('UPDATE usuarios SET usuario=?, nombre=?, rol=?, activo=? WHERE id=?')
+                   ->execute([$usuario, $nombre, $rol, $activo, $id]);
+                if ($clave !== '') {
+                    $db->prepare('UPDATE usuarios SET hash_clave=? WHERE id=?')
+                       ->execute([password_hash($clave, PASSWORD_DEFAULT), $id]);
+                }
+                auditar('usuario', $id, 'modificación', $usuario . ($clave !== '' ? ' (cambió clave)' : ''));
+                flash('Usuario actualizado.');
+            } catch (PDOException $e) {
+                flash(str_contains($e->getMessage(), 'UNIQUE') ? "Ya existe el usuario «{$usuario}»." : 'No se pudo guardar.', 'error');
+                redir('usuarios&id=' . $id);
+            }
+        } else {
+            if (strlen($clave) < 4) { flash('La clave es obligatoria (mínimo 4 caracteres) para un usuario nuevo.', 'error'); redir('usuarios'); }
+            try {
+                $db->prepare('INSERT INTO usuarios (usuario, nombre, rol, activo, hash_clave) VALUES (?,?,?,?,?)')
+                   ->execute([$usuario, $nombre, $rol, $activo, password_hash($clave, PASSWORD_DEFAULT)]);
+                auditar('usuario', (int)$db->lastInsertId(), 'alta', $usuario);
+                flash('Usuario creado.');
+            } catch (PDOException $e) {
+                flash(str_contains($e->getMessage(), 'UNIQUE') ? "Ya existe el usuario «{$usuario}»." : 'No se pudo crear.', 'error');
+            }
+        }
+        redir('usuarios');
+        break;
+
+    case 'usuarios.borrar':
+        requiere_rol(ROL_ADMIN);
+        csrf_check();
+        $db = db();
+        $id = (int)($_POST['id'] ?? 0);
+        $yo = usuario_actual();
+        if ($id === (int)$yo['id']) { flash('No podés eliminarte a vos mismo.', 'error'); redir('usuarios'); }
+        $st = $db->prepare('SELECT * FROM usuarios WHERE id=?');
+        $st->execute([$id]);
+        $u = $st->fetch();
+        if ($u) {
+            $adminsActivos = (int)$db->query("SELECT COUNT(*) FROM usuarios WHERE rol='" . ROL_ADMIN . "' AND activo=1")->fetchColumn();
+            if ($u['rol'] === ROL_ADMIN && $u['activo'] && $adminsActivos <= 1) {
+                flash('No podés eliminar al último administrador activo.', 'error'); redir('usuarios');
+            }
+            $db->prepare('DELETE FROM usuarios WHERE id=?')->execute([$id]);
+            auditar('usuario', $id, 'baja', $u['usuario']);
+            flash('Usuario eliminado.');
+        }
+        redir('usuarios');
+        break;
+
     case 'areas':
         requiere_login();
         $todas = db()->query('SELECT * FROM areas ORDER BY codigo')->fetchAll();
